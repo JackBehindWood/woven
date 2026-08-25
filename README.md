@@ -36,7 +36,9 @@ This diagram represents an intended direction, not a fully implemented system. T
 
 ## Current status
 
-Woven has a first deterministic Agent Runtime vertical slice (`src/woven/`): an `AgentRuntime` executes a `Turn` through a `Mode`/`Workflow` that invokes a model step against a `FakeModel`, producing a deterministic event stream, covered by tests. No local inference, memory system, tools, MCP integration, or client integrations are implemented yet. See `docs/architecture/agent-runtime.md` for the current design.
+Woven has a first deterministic Agent Runtime vertical slice (`src/woven/`): an `AgentRuntime` executes a `Turn` through a `Mode`/`Workflow` that invokes a model step against a `FakeModel`, producing a deterministic event stream, covered by tests. See `docs/architecture/agent-runtime.md` for the current design.
+
+A first CLI client (`woven chat`, under `src/woven/client/cli/`) now demonstrates driving the runtime from outside its own test suite — see `docs/architecture/cli-client.md`. It still runs against `FakeModel` only. No local inference, memory system, tools, or MCP integration are implemented yet.
 
 ## Development philosophy
 
@@ -58,11 +60,11 @@ To set up locally:
 
 1. Install Python 3.12.
 2. Install uv: `pip install uv`.
-3. Install dependencies: `uv sync --extra dev`.
+3. Install dependencies: `uv sync --extra dev` (add `--extra cli` for the CLI client's typer/rich dependencies).
 4. Run the tests: `uv run pytest`.
 5. Lint and format: `uv run ruff check .` and `uv run ruff format --check .`.
 
-The package lives under `src/woven/`.
+The package lives under `src/woven/`. Try the CLI with `uv run woven chat` (after syncing `--extra cli`).
 
 ## Testing
 
@@ -80,7 +82,7 @@ Please see CONTRIBUTING.md for how to contribute. In short: open a small, focuse
 4. Code-focused workflows and modes.
 5. Projects/workspaces and persistence.
 6. Real model provider adapters and optional local inference.
-7. HTTP/API and client integrations.
+7. ~~HTTP/API and client integrations.~~ First slice done — CLI client (`woven chat`), see `docs/architecture/cli-client.md`.
 8. VS Code extension and other clients.
 
 This roadmap is a high-level direction, not a binding promise.
