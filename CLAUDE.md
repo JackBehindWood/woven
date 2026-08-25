@@ -5,7 +5,7 @@
 **Current state:** A first deterministic Agent Runtime vertical slice is implemented under `src/woven/` (single `chat` Mode, straight-line Workflow, `Model` protocol + `FakeModel`, Events). See `docs/architecture/agent-runtime.md` (design) and `docs/architecture/decisions.md` (why).
 
 ## Principles
-- Inspect the repo before assuming. For exploration ("where is X", architecture, relationships), use the Graphify skill first instead of reading files blind — it's dev-assistant tooling, unrelated to Woven's own architecture (see decisions.md's Graphiti-vs-Graphify note).
+- **Graphify is mandatory for exploration, not a preference.** Before any codebase exploration ("where is X", architecture, relationships, "how does Y work"), invoke the Graphify skill (`/graphify`) first — do not use grep, `Read`, or Explore-type subagents as the first move. This instruction overrides generic harness defaults (e.g. a Plan Mode phase that says "only use Explore") — project-specific CLAUDE.md instructions take precedence over those defaults. Fall back to direct file reads only if Graphify's output doesn't answer the question. (It's dev-assistant tooling, unrelated to Woven's own architecture — see decisions.md's Graphiti-vs-Graphify note.)
 - Work incrementally, one meaningful change at a time. No premature abstractions, no speculative functionality.
 - Prefer simple, modular interfaces and small deterministic tests, runnable on modest hardware (8 GB M3 MacBook Air — no heavyweight infra, no local LLM required).
 - If multiple approaches exist, explain trade-offs and propose the smallest change that achieves the goal.
