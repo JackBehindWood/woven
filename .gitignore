@@ -25,3 +25,7 @@ htmlcov/
 build/
 dist/
 *.egg-info/
+
+# Claude Code local config (ignored, local-only)
+.claude/
+CLAUDE.md
