@@ -20,9 +20,11 @@ DEFAULT_RESPONSE = "This is a fixed demo reply — Woven has no real model conne
 _EXIT_WORDS = {"exit", "quit", ":q"}
 
 
-@app.callback()
-def main() -> None:
+@app.callback(invoke_without_command=True)
+def main(ctx: typer.Context) -> None:
     """Woven — a local-first AI agent platform. This is an early CLI slice."""
+    if ctx.invoked_subcommand is None:
+        _run_chat(DEFAULT_RESPONSE)
 
 
 @app.command()
@@ -40,6 +42,10 @@ def chat(
     Woven has no real model provider implemented yet. See --response to
     change the canned reply.
     """
+    _run_chat(response)
+
+
+def _run_chat(response: str) -> None:
     console = Console()
     render_header(console, response_text=response)
 

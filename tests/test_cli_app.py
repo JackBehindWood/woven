@@ -34,3 +34,11 @@ def test_chat_header_discloses_demo_model():
 
     assert "demo" in result.stdout.lower()
     assert "FakeModel" in result.stdout
+
+
+def test_bare_invocation_starts_chat_directly():
+    result = runner.invoke(app, [], input="hi\nexit\n")
+
+    assert result.exit_code == 0
+    assert "Goodbye" in result.stdout
+    assert "demo model" in result.stdout.lower()
