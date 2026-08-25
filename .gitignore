@@ -25,3 +25,12 @@ htmlcov/
 build/
 dist/
 *.egg-info/
+
+# Ruff cache
+.ruff_cache/
+
+# Claude Code local config (ignored, local-only)
+.claude/
+
+# Graphify knowledge graph output (generated, local-only)
+graphify-out/

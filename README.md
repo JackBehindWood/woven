@@ -36,7 +36,7 @@ This diagram represents an intended direction, not a fully implemented system. T
 
 ## Current status
 
-Woven is in the early repository and architecture setup stage. This repository provides the foundation and development tooling; no runtime, local inference, memory system, MCP integration, or client integrations are implemented yet.
+Woven has a first deterministic Agent Runtime vertical slice (`src/woven/`): an `AgentRuntime` executes a `Turn` through a `Mode`/`Workflow` that invokes a model step against a `FakeModel`, producing a deterministic event stream, covered by tests. No local inference, memory system, tools, MCP integration, or client integrations are implemented yet. See `docs/architecture/agent-runtime.md` for the current design.
 
 ## Development philosophy
 
@@ -54,13 +54,15 @@ This repository initializes a minimal Python development environment using Pytho
 - pytest for tests
 - ruff for linting and formatting
 
-To set up locally (example):
+To set up locally:
 
 1. Install Python 3.12.
 2. Install uv: `pip install uv`.
-3. Install dev dependencies: `uv install -d`.
+3. Install dependencies: `uv sync --extra dev`.
+4. Run the tests: `uv run pytest`.
+5. Lint and format: `uv run ruff check .` and `uv run ruff format --check .`.
 
-(We have intentionally not created the package/runtime layout yet. That will come with the first implementation slice.)
+The package lives under `src/woven/`.
 
 ## Testing
 
@@ -72,8 +74,8 @@ Please see CONTRIBUTING.md for how to contribute. In short: open a small, focuse
 
 ## Roadmap (high-level)
 
-1. Repository and development foundation (this stage).
-2. Deterministic Agent Runtime vertical slice (core abstractions, FakeModel for tests).
+1. ~~Repository and development foundation.~~
+2. ~~Deterministic Agent Runtime vertical slice (core abstractions, FakeModel for tests).~~ Done — see `docs/architecture/agent-runtime.md`.
 3. Tools and context retrieval.
 4. Code-focused workflows and modes.
 5. Projects/workspaces and persistence.
@@ -85,4 +87,4 @@ This roadmap is a high-level direction, not a binding promise.
 
 ---
 
-For more details, see docs/architecture.md and CONTRIBUTING.md.
+For more details, see docs/architecture.md, docs/architecture/ (current runtime design), and CONTRIBUTING.md.

@@ -1,37 +1,26 @@
-Woven — Claude Code Developer Guidance
+# Woven — Claude Code Developer Guidance
 
-Project identity
-- Repository: Woven (woven)
-- Purpose: Open-source, local-first AI agent platform. Long-term goals: modular, model-agnostic agent system combining models, tools, context, memory, workflows, projects/workspaces, permissions, and multiple clients.
-- Current state: repository and architecture foundation only. NO runtime, model adapters, or external integrations are implemented yet.
+**Purpose:** Open-source, local-first AI agent platform — a modular, model-agnostic runtime combining models, tools, context, memory, workflows, projects/workspaces, permissions, and multiple clients.
 
-Claude Code development principles for this repo
-- Inspect the actual repository before making assumptions.
-- Work incrementally: make one meaningful change at a time.
-- Avoid premature abstractions and avoid adding speculative future functionality.
-- Prefer simple, modular interfaces and small deterministic tests.
-- Preserve working functionality: do not change public-facing docs or behavior unless required.
-- Do NOT introduce heavyweight infra or require a powerful local LLM. The development machine is an 8 GB M3 MacBook Air.
-- If multiple reasonable approaches exist, explain trade-offs and propose the smallest change that achieves the goal.
+**Current state:** A first deterministic Agent Runtime vertical slice is implemented under `src/woven/` (single `chat` Mode, straight-line Workflow, `Model` protocol + `FakeModel`, Events). See `docs/architecture/agent-runtime.md` (design) and `docs/architecture/decisions.md` (why).
 
-Important constraints (do not violate)
-- Do NOT implement Agent Runtime or application code in this step.
-- Do NOT add model providers, llama.cpp, MCP, Graphiti, vector DBs, embeddings, or other heavy infra.
-- Do NOT create new top-level application directories (apps/, packages/, core/, etc.) at this repository-prep stage.
-- Keep all Claude Code developer configuration local and untracked.
+## Principles
+- Inspect the repo before assuming. For exploration ("where is X", architecture, relationships), use the Graphify skill first instead of reading files blind — it's dev-assistant tooling, unrelated to Woven's own architecture (see decisions.md's Graphiti-vs-Graphify note).
+- Work incrementally, one meaningful change at a time. No premature abstractions, no speculative functionality.
+- Prefer simple, modular interfaces and small deterministic tests, runnable on modest hardware (8 GB M3 MacBook Air — no heavyweight infra, no local LLM required).
+- If multiple approaches exist, explain trade-offs and propose the smallest change that achieves the goal.
 
-Local tooling expectations
-- Python 3.12 is the target development runtime.
-- Use uv for environment management when implementing code later.
-- Use pytest for tests and ruff for linting/formatting.
-- Tests must be deterministic and runnable on modest hardware.
-- FakeModel and MockTools will be permanent test fixtures in future slices (but not implemented now).
+## Constraints (do not violate)
+- Don't expand scope beyond the current slice without explaining why first.
+- No model providers, llama.cpp, MCP, Graphiti, vector DBs, embeddings, or other heavy infra.
+- No new top-level app directories (`apps/`, `packages/`, `core/`); `src/woven/` is package layout and is fine.
+- `.claude/` stays local/untracked; `CLAUDE.md` itself is intentionally tracked.
+- Repo settings / branch protection changes: ask the maintainer (JackBehindWood) first.
 
-If you need to change repository settings or create branch protection rules, ask the project maintainer (JackBehindWood) first.
+## Tooling
+- Python 3.12, managed with `uv`; `pytest` for tests, `ruff` for lint/format.
+- Before calling work done: `uv sync && uv run ruff check . && uv run pytest`.
+- `FakeModel` is a permanent test fixture; `MockTools` is planned for a future Tools slice.
 
-Usage
-- This CLAUDE.md is a local instruction file for Claude Code and should remain untracked. Add it to .gitignore locally (the project .gitignore will be updated to list CLAUDE.md).
-- For any development work, run uv install -d, uv run ruff check ., uv run pytest.
-
-Contact / notes
-- This file is local-only. To modify public repository docs or architecture, propose a small PR with clear rationale.
+## Docs
+- Public docs/architecture changes: propose a small PR with clear rationale.
