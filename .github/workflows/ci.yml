@@ -1,0 +1,64 @@
+name: CI - lint & test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+
+    - name: Install uv (optional) and dev dependencies
+      run: |
+        python -m pip install --upgrade pip
+        # Try to install uv, but don't fail if this step has issues; uv is optional
+        pip install uv || true
+        # If uv is available, use it to install project/dev dependencies
+        if command -v uv >/dev/null 2>&1; then
+          uv install -d || true
+        else
+          echo "uv not available or not configured; continuing without uv"
+        fi
+
+    - name: Install ruff (prefer uv)
+      run: |
+        # Prefer to install/run ruff via uv if available so that project-managed env is used.
+        if command -v uv >/dev/null 2>&1; then
+          echo "Installing ruff into uv environment"
+          uv run python -m pip install --upgrade pip
+          uv run python -m pip install ruff
+        else
+          echo "uv not available; installing ruff globally"
+          python -m pip install ruff
+        fi
+
+    - name: Ruff (format/lint)
+      run: |
+        if command -v uv >/dev/null 2>&1; then
+          uv run ruff check .
+        else
+          ruff check .
+        fi
+
+    - name: Run pytest only if tests exist
+      run: |
+        sh -c 'if compgen -G "tests/test_*.py" > /dev/null; then
+                 if command -v uv >/dev/null 2>&1; then
+                   uv run pytest -q;
+                 else
+                   pytest -q;
+                 fi
+               else
+                 echo "No test files found, skipping pytest";
+               fi'
