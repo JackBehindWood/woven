@@ -15,6 +15,8 @@ Practical notes from the switch:
 
 `model_node` is a plain function, not a class in a `Node` hierarchy. With exactly one node kind implemented (ToolNode/ContextNode/ApprovalNode are future work), a base class would have no shared behavior to justify it. Revisit when a second node kind is actually added — see `agent-runtime.md`'s Nodes section.
 
+**2026-08-26 update (Slice 3):** `tool_node` was added as the second node kind, and still no `Node` class was extracted. The revisit trigger named above ("a second node kind is actually added") fired, but the actual condition for earning the abstraction — shared lifecycle/validation logic beyond the common `Callable[[WorkflowState, EventSink], WorkflowState]` step signature — still isn't met: `tool_node` needs nothing `model_node` doesn't already have (read state, call one collaborator, emit two events, return updated state). Extracting a `Node` protocol now would formalize a shape both functions already satisfy structurally, with no new behavior to attach to it. Revisit again if a third node kind needs something the plain-function shape can't express (e.g. per-node config validation, a `.name` for introspection, or a resource `Tool` needs `state.tool` set — currently unenforced, see `agent-runtime.md`'s Tools section).
+
 ## `turn_id` lives on `WorkflowState`
 
 Events need to be stamped with the `turn_id` they belong to, and `model_node` is what constructs them. Rather than threading `turn_id` as a separate parameter through every workflow step, it's a field on `WorkflowState` itself. This is a pragmatic, non-speculative addition — it's read by every node that emits events, not a "might need it later" field.
@@ -31,8 +33,31 @@ The `CLAUDE.md` edit was reverted back to "Graphiti." If Graphify is initialized
 
 Two independent, non-overlapping mechanisms:
 - **Claude Code hook** (`.claude/settings.json`, untracked/local): a `PostToolUse` hook on `Write|Edit` that runs `uv run ruff check --fix` and `uv run ruff format` on the specific Python file just written, automatically, inside Claude Code sessions only.
-- **git pre-commit hook** (`.pre-commit-config.yaml`, tracked; `pre-commit` added to `[project.optional-dependencies].dev`): runs `uv run ruff check` and `uv run ruff format --check` on staged Python files before every commit, for every contributor who runs `uv run pre-commit install` once after cloning. Unlike the Claude Code hook, this one *blocks* the commit on failure rather than auto-fixing, since git hooks running on someone else's uncommitted work should not silently rewrite it.
+- **git pre-commit hook** (`.pre-commit-config.yaml`, tracked): runs `uv run ruff check` and `uv run ruff format --check` on staged Python files before every commit, for every contributor who runs `uv tool install pre-commit && pre-commit install` once after cloning. `pre-commit` itself is installed as an isolated `uv tool`, not a project dependency (see the 2026-08-26 entry below) — the hooks are `language: system`, so they only need `uv`/`ruff` on `PATH`, not `pre-commit` inside the project's `.venv`. Unlike the Claude Code hook, this one *blocks* the commit on failure rather than auto-fixing, since git hooks running on someone else's uncommitted work should not silently rewrite it.
 
 ## Pre-existing `pyproject.toml` bug fixed in passing
 
 `[tool.ruff] target-version` was `["py312"]` (a list) instead of `"py312"` (a string) — invalid TOML for that key, which made `ruff` fail to even parse the config. This predates this slice; fixed here since it blocked the quality gates for this work.
+
+## 2026-08-26 — Multi-agent-readiness considerations (Slice 3, design-only)
+
+While planning Slice 3 (Tools), the current architecture (`AgentRuntime`, `AgentRun`/`Turn`, `Workflow`/`WorkflowState`, `Mode`, the Event stream, the CLI's client/runtime boundary) was rechecked against whether it would box in future multi-agent support. No multi-agent work is scheduled or implemented; this is analysis only, recorded so a future slice doesn't have to rediscover it.
+
+**Orchestrator shape.** An "orchestrator" agent most likely looks like a `Workflow` step that itself invokes another `AgentRuntime.run_turn` (or the same runtime, recursively) and folds the sub-agent's result back into `WorkflowState` — structurally close to `tool_node` (a step delegating to an external unit of work and getting a result back), not a different `AgentRuntime` shape. It does not require a new node type today because nothing in Slice 3 needs it yet; it's a plausible future node, not a required one.
+
+**AgentRun/Turn/Event scoping.** These do assume one linear agent's-eye view: `Event.turn_id` and `AgentRun.events`'s flat list have no field distinguishing "which agent." This is a pre-existing seam, not something Slice 3 introduces or worsens — it's the same shape as `agent-runtime.md`'s already-documented "Known simplification to revisit" (`RunStarted`/`RunCompleted` firing per-turn, not per-run). If/when multi-agent becomes concrete, the natural extension (by the same reasoning that put `turn_id` directly on `WorkflowState`) is an `agent_id` field added where it's actually read — not a redesign of `AgentRun`'s list structure.
+
+**Tool-as-agent is a false equivalence, worth naming.** A `Tool.execute()` call is synchronous, stateless, and collapses to one `ToolResult`. Wrapping a sub-agent behind that same `Protocol` would work syntactically (an agent-as-tool adapter could technically return a `ToolResult`), but it would flatten away the sub-agent's own event stream and `Turn` structure into a single scalar — real information loss, not a clean generalization. If an agent-as-tool adapter is ever built, it should be named and documented as a lossy adapter over `Tool`'s shape, not treated as literal "an agent is just another Tool."
+
+**CLI client/runtime boundary.** `run_chat_turn` assumes one `AgentRuntime` + one `AgentRun` per call, rendered synchronously after `run_turn` returns. Nothing prevents constructing multiple `AgentRun`s today, but a client driving several concurrent agents would want interleaved/live rendering across them — which runs into the same "event-injection gap" `cli-client.md` already documents (no live `EventSink` parameter on `run_turn`), just now motivated by concurrency instead of duration.
+
+**Bottom line:** Slice 3's concrete `Tool`/`tool_node`/`MockTools` design has no tension with any of the above — none of these seams are made bigger or smaller by adding a second node kind. The two real gaps (single-agent-scoped `Event`/`AgentRun`, and the tool-as-agent equivalence) already exist independent of Tools; nothing here changes what Slice 3 built.
+
+## 2026-08-26 — Editable-install/venv flakiness: actual fix, not just a workaround
+
+The "known issue" documented in README (stray `.pth`-ordering bug, `ModuleNotFoundError: No module named 'woven'`) was suspected to stem from `virtualenv` — a real transitive dependency of `pre-commit` — being installed into the *same* `.venv` as `woven`'s own editable install, since `pre-commit` lived in `[project.optional-dependencies].dev`. Rather than only documenting a recovery command, the actual trigger for that coexistence is removed:
+
+- `uv` upgraded 0.10.8 → 0.12.6 (Homebrew).
+- `pre-commit` moved out of `dev` and installed instead via `uv tool install pre-commit` — an isolated tool venv, like `pipx`. It never shares `.venv` with `woven` again, so `virtualenv` can't land there either. The pre-commit hooks themselves are unaffected (`.pre-commit-config.yaml`'s hooks are `language: system`, calling `uv run ruff ...` directly — they never needed `pre-commit` itself inside the project's venv).
+
+This is a structural fix (the two packages/tools no longer share an environment at all) rather than a version pin aimed at a specific guessed mechanism. `.python-version` + `python-preference = "managed"` (added previously) stay in place as additional belt-and-braces. `rm -rf .venv && uv sync --all-extras` remains the documented fallback in README if `ModuleNotFoundError` ever recurs regardless.

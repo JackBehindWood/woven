@@ -5,6 +5,8 @@ from woven.events.core import (
     RunCompleted,
     RunFailed,
     RunStarted,
+    ToolCallCompleted,
+    ToolCallStarted,
     TurnCompleted,
     TurnStarted,
 )
@@ -16,6 +18,8 @@ __all__ = [
     "RunCompleted",
     "RunFailed",
     "RunStarted",
+    "ToolCallCompleted",
+    "ToolCallStarted",
     "TurnCompleted",
     "TurnStarted",
 ]

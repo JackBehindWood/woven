@@ -138,7 +138,7 @@ class ModelResponse(BaseModel):
 
 ## Tools
 
-**Concept (future):**
+**Concept:**
 
 ```text
 ToolRequest
@@ -150,9 +150,17 @@ Tool
 ToolResult
 ```
 
-MCP is a future adapter/integration boundary, not Woven's internal tool architecture.
+MCP is a future adapter/integration boundary, not Woven's internal tool architecture. Permission/Policy is future work (Slice 5) — not implemented yet.
 
-**Current implementation:** none. Tools are entirely out of scope for this slice.
+**Current implementation** (`src/woven/tools/protocol.py`, `src/woven/tools/mock.py`, `src/woven/workflow/core.py`):
+
+- `Tool` is a `runtime_checkable` `Protocol` with one method, `execute(request: ToolRequest) -> ToolResult` — mirrors `Model`'s shape exactly, for the same reason: structural typing, no shared base class needed.
+- `ToolRequest`/`ToolResult` are frozen pydantic `BaseModel`s with `purpose`/`input_text` and `output_text` fields respectively, mirroring `ModelRequest`/`ModelResponse`. Neither carries a tool name — the specific `Tool` instance to call is already selected by whoever holds the reference, same as `ModelRequest` carrying no model identifier.
+- `tool_node` (`src/woven/workflow/core.py`) is a plain function alongside `model_node`, matching the same `Callable[[WorkflowState, EventSink], WorkflowState]` step signature. It emits `ToolCallStarted`/`ToolCallCompleted`, calls `state.tool.execute(...)`, and writes the result into `state.output_text`. It reads `state.output_text` as its input if a prior step already set it (falling back to `state.input_text`), which is what lets `[model_node, tool_node]` chain a model's reply into a tool call.
+- `WorkflowState.tool: Tool | None = None` — optional, so the existing `chat` workflow (which never sets a tool) is unaffected.
+- `MockTools` (`src/woven/tools/mock.py`) is `FakeModel`'s permanent-test-infrastructure counterpart: records every `ToolRequest`, returns a fixed configured `output_text`, and can be constructed with `raise_error=True` to deterministically raise `ToolError`.
+
+**Not yet done:** `tool_node` is not wired into any `Mode` — `BUILTIN_MODES["chat"]` still runs `[model_node]` only. This slice proves a `Workflow` *can* mix model and tool steps (see `tests/test_workflow.py`); shipping a tool-using `Mode` is Slice 6. No generic `Node` base class was introduced either — see `docs/architecture/decisions.md` for why the second-node-kind revisit point still didn't earn one.
 
 ## Context
 
@@ -226,12 +234,12 @@ Deterministic testing is a permanent architectural requirement: the runtime must
 | AgentRuntime, AgentRun, Turn | Implemented (in-memory, no persistence) |
 | Mode (single `chat` mode) | Implemented |
 | Workflow (straight-line steps) | Implemented |
-| Node abstraction | Not implemented — `model_node` is a plain function; deferred until a second node kind exists |
+| Node abstraction | Not implemented — `model_node`/`tool_node` are both plain functions; a second node kind now exists but still shares no behavior beyond the common step signature, so no `Node` class was extracted |
 | WorkflowState | Implemented (minimal fields only) |
 | Model protocol, ModelRequest/Response, FakeModel | Implemented |
 | Events (7 types, callback-collected) | Implemented |
 | Errors (`ModelError` → `RunFailed`) | Implemented |
-| Tools | Not implemented |
+| Tools (`Tool` protocol, `tool_node`, `MockTools`) | Implemented — not wired into any `Mode` yet |
 | Context / ContextSnapshot | Not implemented |
 | Memory / Graphiti | Not implemented |
 | Cancellation | Not implemented (deferred — nothing blocks) |

@@ -38,7 +38,7 @@ This diagram represents an intended direction, not a fully implemented system. T
 
 Woven has a first deterministic Agent Runtime vertical slice (`src/woven/`): an `AgentRuntime` executes a `Turn` through a `Mode`/`Workflow` that invokes a model step against a `FakeModel`, producing a deterministic event stream, covered by tests. See `docs/architecture/agent-runtime.md` for the current design.
 
-A first CLI client (`woven chat`, under `src/woven/client/cli/`) now demonstrates driving the runtime from outside its own test suite — see `docs/architecture/cli-client.md`. It still runs against `FakeModel` only. No local inference, memory system, tools, or MCP integration are implemented yet.
+A first CLI client (`woven chat`, under `src/woven/client/cli/`) now demonstrates driving the runtime from outside its own test suite — see `docs/architecture/cli-client.md`. It still runs against `FakeModel` only. A `Tool` protocol, `tool_node`, and deterministic `MockTools` exist (see `docs/architecture/agent-runtime.md`'s Tools section) but aren't wired into any Mode yet. No local inference, memory system, context retrieval, or MCP integration are implemented yet.
 
 ## Development philosophy
 
@@ -63,10 +63,11 @@ To set up locally:
 3. Install dependencies: `uv sync --extra dev` (add `--extra cli` for the CLI client's typer/rich dependencies).
 4. Run the tests: `uv run pytest`.
 5. Lint and format: `uv run ruff check .` and `uv run ruff format --check .`.
+6. (Optional) Install the git pre-commit hook: `uv tool install pre-commit && pre-commit install`. `pre-commit` is installed as an isolated uv tool, not a project dependency — it never shares the project's `.venv`, so its `virtualenv` dependency can't collide with `woven`'s own editable install there.
 
 The package lives under `src/woven/`. Try the CLI with `uv run woven chat` (after syncing `--extra cli`).
 
-**Known issue: editable-install / venv flakiness.** Occasionally `uv run woven` (or `import woven`) fails with `ModuleNotFoundError: No module named 'woven'` even though `uv sync` reports success. This is a stray `.pth`-ordering bug in the dev venv, triggered by `virtualenv` (a transitive dependency of `pre-commit`) racing the editable install — not a code issue. It has recurred more than once, so don't re-debug it from scratch: `.python-version` (pinning `3.12`) and `pyproject.toml`'s `[tool.uv] python-preference = "managed"` reduce how often it happens; if it still occurs, `rm -rf .venv && uv sync --all-extras` (or `uv sync --all-extras --reinstall-package woven`) clears it.
+**Resolved issue: editable-install / venv flakiness.** `uv run woven` (or `import woven`) used to occasionally fail with `ModuleNotFoundError: No module named 'woven'` even though `uv sync` reported success — a stray `.pth`-ordering bug in the dev venv, suspected to be triggered by `virtualenv` (then a transitive dependency of `pre-commit`, which used to live in the project's own venv via the `dev` extra) racing the editable install. Fixed by upgrading `uv` (0.10.8 → 0.12.6) and moving `pre-commit` out of `dev` into an isolated `uv tool install` (see step 6 above), so `virtualenv` no longer installs into `.venv` at all. `.python-version` (pinning `3.12`) and `[tool.uv] python-preference = "managed"` remain in place as belt-and-braces. If `ModuleNotFoundError: No module named 'woven'` ever recurs regardless: `rm -rf .venv && uv sync --all-extras` (or `uv sync --all-extras --reinstall-package woven`) clears it.
 
 ## Testing
 
@@ -80,7 +81,7 @@ Please see CONTRIBUTING.md for how to contribute. In short: open a small, focuse
 
 1. ~~Repository and development foundation.~~
 2. ~~Deterministic Agent Runtime vertical slice (core abstractions, FakeModel for tests).~~ Done — see `docs/architecture/agent-runtime.md`.
-3. Tools and context retrieval.
+3. ~~Tools.~~ Protocol/`tool_node`/`MockTools` done, not wired into a Mode yet — see `docs/architecture/agent-runtime.md`. Context retrieval still pending.
 4. Code-focused workflows and modes.
 5. Projects/workspaces and persistence.
 6. Real model provider adapters and optional local inference.
