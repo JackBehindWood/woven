@@ -4,6 +4,8 @@ from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict
 
+from woven.context import ContextSnapshot
+
 
 class ModelError(Exception):
     """Raised when a Model adapter fails to produce a response."""
@@ -14,6 +16,7 @@ class ModelRequest(BaseModel):
 
     purpose: str
     input_text: str
+    context: ContextSnapshot | None = None
 
 
 class ModelResponse(BaseModel):

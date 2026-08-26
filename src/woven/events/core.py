@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict
 
+from woven.context import ContextSnapshot
 from woven.models import ModelRequest, ModelResponse
+from woven.permissions import ApprovalDecision
 from woven.tools import ToolRequest, ToolResult
 
 
@@ -34,6 +36,18 @@ class ToolCallStarted(Event):
 
 class ToolCallCompleted(Event):
     result: ToolResult
+
+
+class ContextRetrieved(Event):
+    snapshot: ContextSnapshot
+
+
+class ApprovalRequested(Event):
+    request: ToolRequest
+
+
+class ApprovalDecided(Event):
+    decision: ApprovalDecision
 
 
 class TurnCompleted(Event):

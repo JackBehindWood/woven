@@ -1,4 +1,7 @@
 from woven.events.core import (
+    ApprovalDecided,
+    ApprovalRequested,
+    ContextRetrieved,
     Event,
     ModelCompleted,
     ModelStarted,
@@ -12,6 +15,9 @@ from woven.events.core import (
 )
 
 __all__ = [
+    "ApprovalDecided",
+    "ApprovalRequested",
+    "ContextRetrieved",
     "Event",
     "ModelCompleted",
     "ModelStarted",
