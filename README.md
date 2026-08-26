@@ -36,9 +36,9 @@ This diagram represents an intended direction, not a fully implemented system. T
 
 ## Current status
 
-Woven has a first deterministic Agent Runtime vertical slice (`src/woven/`): an `AgentRuntime` executes a `Turn` through a `Mode`/`Workflow` that invokes a model step against a `FakeModel`, producing a deterministic event stream, covered by tests. See `docs/architecture/agent-runtime.md` for the current design.
+Woven has a deterministic Agent Runtime (`src/woven/`): an `AgentRuntime` executes a `Turn` through one of three `Mode`s (`chat`, `plan`, `code`), each a `Workflow` composing model, context, approval, and tool steps, producing a deterministic event stream, covered by tests. See `docs/architecture/agent-runtime.md` for the current design.
 
-A first CLI client (`woven chat`, under `src/woven/client/cli/`) now demonstrates driving the runtime from outside its own test suite — see `docs/architecture/cli-client.md`. It still runs against `FakeModel` only. A `Tool` protocol, `tool_node`, and deterministic `MockTools` exist (see `docs/architecture/agent-runtime.md`'s Tools section) but aren't wired into any Mode yet. No local inference, memory system, context retrieval, or MCP integration are implemented yet.
+A CLI client (`woven chat`, under `src/woven/client/cli/`) is at parity with the runtime — three selectable permission tiers, real filesystem context retrieval, and `/mode`/`/permission`/`/context`/`/settings` commands — see `docs/clients/cli.md`. Multi-agent support is designed but not implemented yet — see `docs/architecture/multi-agent.md`. Everything above still runs on fakes: no real model provider, no persistence, no memory, no MCP integration.
 
 ## Development philosophy
 
@@ -80,15 +80,17 @@ Please see CONTRIBUTING.md for how to contribute. In short: open a small, focuse
 ## Roadmap (high-level)
 
 1. ~~Repository and development foundation.~~
-2. ~~Deterministic Agent Runtime vertical slice (core abstractions, FakeModel for tests).~~ Done — see `docs/architecture/agent-runtime.md`.
-3. ~~Tools.~~ Protocol/`tool_node`/`MockTools` done, not wired into a Mode yet — see `docs/architecture/agent-runtime.md`. Context retrieval still pending.
-4. Code-focused workflows and modes.
-5. Projects/workspaces and persistence.
-6. Real model provider adapters and optional local inference.
-7. ~~HTTP/API and client integrations.~~ First slice done — CLI client (`woven chat`), see `docs/architecture/cli-client.md`.
-8. VS Code extension and other clients.
+2. ~~Deterministic Agent Runtime (core abstractions, FakeModel for tests).~~ Done — see `docs/architecture/agent-runtime.md`.
+3. ~~Tools, Context, Permissions, and the `plan`/`code` Modes.~~ Done — see `docs/architecture/agent-runtime.md`.
+4. ~~A CLI client at parity with the runtime.~~ Done — see `docs/clients/cli.md`.
+5. Real model provider adapters (cloud first, then local inference).
+6. Real tool implementations (shell/file), replacing `MockTools`.
+7. Projects/workspaces and persistence.
+8. Project-scoped memory.
+9. Multi-agent implementation — see `docs/architecture/multi-agent.md` for the design.
+10. VS Code extension and other clients.
 
-This roadmap is a high-level direction, not a binding promise.
+Items 5–10 are dependency-ordered. This roadmap is a high-level direction, not a binding promise.
 
 ---
 

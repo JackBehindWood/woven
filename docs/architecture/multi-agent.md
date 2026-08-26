@@ -1,10 +1,10 @@
 # Multi-agent architecture (design only)
 
-This document is the durable, committed reference for how multi-agent support — an orchestrator agent delegating to sub-agents, or multiple concurrent agents driven by one client — would extend Woven's Agent Runtime. It is Slice 4's deliverable: a dedicated planning pass, no code. It complements `docs/architecture/agent-runtime.md` (the current single-agent runtime) and `docs/architecture/cli-client.md` (the current client/runtime boundary) the same way those two complement each other — recording design and reasoning so a future contributor doesn't have to reconstruct it.
+This document is the durable, committed reference for how multi-agent support — an orchestrator agent delegating to sub-agents, or multiple concurrent agents driven by one client — would extend Woven's Agent Runtime. It is a dedicated planning pass, no code. It complements `docs/architecture/agent-runtime.md` (the current single-agent runtime) and `docs/clients/cli.md` (the current client/runtime boundary) the same way those two complement each other — recording design and reasoning so a future contributor doesn't have to reconstruct it.
 
-**Nothing in this document is implemented.** Every field, event, and function named below is a target shape for a future slice, not code that exists today. Where this document says "current," it describes `src/woven/` as it stands after Slice 3 (Tools). Where it says "future," it describes direction only — no promise of a specific slice or timeline beyond what `.claude/plans/project-timeline.md` already schedules.
+**Nothing in this document is implemented.** Every field, event, and function named below is a target shape for future work, not code that exists today. Where this document says "current," it describes `src/woven/` as it stands after the Tools work landed. Where it says "future," it describes direction only — no promise of a specific timeline.
 
-This document builds directly on `docs/architecture/decisions.md`'s 2026-08-26 "Multi-agent-readiness considerations" entry (written during Slice 3), which first identified the two real gaps this document resolves: the single-agent scoping of `Event`/`AgentRun`, and why "agent-as-tool" is a false equivalence. Two forks left open there were checked with the project owner before writing this document:
+This document builds directly on `docs/architecture/decisions.md`'s 2026-08-26 "Multi-agent-readiness considerations" entry (written during the Tools work), which first identified the two real gaps this document resolves: the single-agent scoping of `Event`/`AgentRun`, and why "agent-as-tool" is a false equivalence. Two forks left open there were checked with the project owner before writing this document:
 
 - **Nesting model:** a sub-agent's events are **flattened** into the parent `AgentRun.events` (tagged for correlation) *and* the sub-agent's own `Turn`/`AgentRun` object is **retained** via a nested reference — not one or the other. This avoids the "lossy adapter" problem named below, while keeping today's flat-list consumers (the CLI's event rendering) unchanged.
 - **Orchestrator shape:** a plain **Workflow step**, matching the existing `Callable[[WorkflowState, EventSink], WorkflowState]` signature used by `model_node`/`tool_node` — not a new Mode-level composition concept. No new node class.
@@ -29,7 +29,7 @@ Two things get conflated by a single "agent_id" label; the target design keeps t
 
 The real gaps for multi-agent are not in `AgentRuntime` itself:
 
-- **(a)** The event-injection gap `cli-client.md` already documents: `run_turn`'s `emit` closure is defined inside the method with no parameter for a caller to inject an external `EventSink`, so a client can only replay events post-hoc, never observe them live. That gap was originally motivated by call duration (nothing today is long-running); multi-agent adds a second, independent motivation — a client driving several concurrent agents would want interleaved live rendering across them, which needs the same injectable `EventSink` this gap already calls for.
+- **(a)** The event-injection gap `docs/clients/cli.md` already documents: `run_turn`'s `emit` closure is defined inside the method with no parameter for a caller to inject an external `EventSink`, so a client can only replay events post-hoc, never observe them live. That gap was originally motivated by call duration (nothing today is long-running); multi-agent adds a second, independent motivation — a client driving several concurrent agents would want interleaved live rendering across them, which needs the same injectable `EventSink` this gap already calls for.
 - **(b)** The correlation/nesting fields from Section 1, needed to make sense of a flattened multi-agent event stream once one exists.
 
 ## 3. Minimal orchestrator step (`agent_node`): what it needs beyond `ToolNode`'s shape
@@ -62,7 +62,7 @@ Reaffirming `decisions.md`'s existing finding, now tied directly to the design a
 | `WorkflowState.sub_runs: list[AgentRun]` | Later — add when `agent_node` is actually built (Section 3) |
 | `SubAgentStarted` / `SubAgentCompleted` events | Later — add alongside `agent_node` |
 | `agent_node` itself | Later — no scheduled slice yet; candidate for a future "Additional Modes"-adjacent slice once an orchestrator use case is concrete |
-| Optional injectable `EventSink` parameter on `run_turn` | Later, but tracked now as doubly-motivated (duration, per `cli-client.md`, and concurrency, per Section 2) — a natural candidate whenever Slice 10 (Additional clients) or a live-rendering need becomes concrete |
+| Optional injectable `EventSink` parameter on `run_turn` | Later, but tracked now as doubly-motivated (duration, per `docs/clients/cli.md`, and concurrency, per Section 2) — a natural candidate whenever Additional clients work or a live-rendering need becomes concrete |
 | `AgentRuntime` method/shape changes | **None planned** — Section 2 concludes the existing `run_turn` signature is sufficient |
 
 All of the "later" changes are additive (new optional fields/parameters, new event types) — deferring them costs nothing today and breaks no existing call site. This follows the same reasoning `decisions.md` already applied to `turn_id` and the `Node` abstraction: add a field or type when something concrete reads or produces it, not before.
@@ -76,11 +76,11 @@ All of the "later" changes are additive (new optional fields/parameters, new eve
 
 | Concept | Status |
 |---|---|
-| Single-agent `AgentRuntime`/`AgentRun`/`Turn`/`Event`/`Workflow` | Implemented (Slice 1–3) |
-| This document (`multi-agent.md`) | Design only — no code (Slice 4) |
+| Single-agent `AgentRuntime`/`AgentRun`/`Turn`/`Event`/`Workflow` | Implemented |
+| This document (`multi-agent.md`) | Design only — no code |
 | `Event.agent_id`, `AgentRun.agent_id`/`parent_run_id` | Not implemented — deferred, target shape recorded (Section 1) |
 | `agent_node` Workflow step | Not implemented — no scheduled slice |
 | `WorkflowState.sub_runs` | Not implemented — deferred (Section 3) |
 | `SubAgentStarted`/`SubAgentCompleted` events | Not implemented — deferred (Section 3) |
-| Injectable `EventSink` on `run_turn` | Not implemented — pre-existing gap (`cli-client.md`), now doubly motivated (Section 2) |
+| Injectable `EventSink` on `run_turn` | Not implemented — pre-existing gap (`docs/clients/cli.md`), now doubly motivated (Section 2) |
 | New `AgentRuntime` method for concurrency | Not planned — existing `run_turn` signature judged sufficient (Section 2) |

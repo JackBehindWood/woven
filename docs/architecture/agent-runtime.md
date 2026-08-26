@@ -59,7 +59,7 @@ An enum was rejected because it can't carry behavior (which workflow to build) w
 
 **Why:** a `Node` base class earns its cost once there are ≥2 heterogeneous node kinds needing shared lifecycle/validation logic. With exactly one node kind implemented, a class hierarchy would be ceremony with no shared behavior to justify it. If/when a second node kind (e.g. ToolNode) is added, extracting a shared `Node` protocol at that point is a cheap, well-motivated refactor — cheaper than maintaining an unused abstraction now.
 
-**2026-08-26 update (Slices 5–7):** two more node kinds (`context_node`, `approval_node`) were added, bringing the total to four. The revisit trigger still hasn't fired: none of the four need anything beyond "read state, call one collaborator, emit one or two events, return updated state" — the same observation `decisions.md` recorded when `tool_node` was added as the second kind. `tool_node` and `approval_node` do share one real piece of logic (building a `ToolRequest` from `state.output_text`/`state.input_text`), but that was extracted as a private module-level function (`_build_tool_request`), not a `Node` class — a shared helper function is the cheaper, correctly-scoped fix for two functions needing one identical line, not a reason to introduce class hierarchy across all four.
+**2026-08-26 update:** two more node kinds (`context_node`, `approval_node`) were added, bringing the total to four. The revisit trigger still hasn't fired: none of the four need anything beyond "read state, call one collaborator, emit one or two events, return updated state" — the same observation `decisions.md` recorded when `tool_node` was added as the second kind. `tool_node` and `approval_node` do share one real piece of logic (building a `ToolRequest` from `state.output_text`/`state.input_text`), but that was extracted as a private module-level function (`_build_tool_request`), not a `Node` class — a shared helper function is the cheaper, correctly-scoped fix for two functions needing one identical line, not a reason to introduce class hierarchy across all four.
 
 ## AgentRun and Turn
 
@@ -136,7 +136,7 @@ class ModelResponse(BaseModel):
     text: str
 ```
 
-`purpose` is the one forward-looking field: it costs nothing today and is the natural seam for future prompt-selection/routing. `context` was added in Slice 5 once `context_node` existed to populate it — `model_node` passes `state.context` straight through; `FakeModel` ignores it, same as it ignores `purpose`. Fields like `expected_output` or sampling parameters remain omitted because nothing reads them yet.
+`purpose` is the one forward-looking field: it costs nothing today and is the natural seam for future prompt-selection/routing. `context` was added once `context_node` existed to populate it — `model_node` passes `state.context` straight through; `FakeModel` ignores it, same as it ignores `purpose`. Fields like `expected_output` or sampling parameters remain omitted because nothing reads them yet.
 
 ## FakeModel
 
@@ -163,7 +163,7 @@ Tool
 ToolResult
 ```
 
-MCP is a future adapter/integration boundary, not Woven's internal tool architecture. Permission/Policy is implemented as of Slice 6 — see the Permissions section below.
+MCP is a future adapter/integration boundary, not Woven's internal tool architecture. Permission/Policy is implemented — see the Permissions section below.
 
 **Current implementation** (`src/woven/tools/protocol.py`, `src/woven/tools/mock.py`, `src/woven/workflow/core.py`):
 
@@ -173,7 +173,7 @@ MCP is a future adapter/integration boundary, not Woven's internal tool architec
 - `WorkflowState.tool: Tool | None = None` — optional, so the existing `chat` workflow (which never sets a tool) is unaffected.
 - `MockTools` (`src/woven/tools/mock.py`) is `FakeModel`'s permanent-test-infrastructure counterpart: records every `ToolRequest`, returns a fixed configured `output_text`, and can be constructed with `raise_error=True` to deterministically raise `ToolError`.
 
-**Wired as of Slice 7:** `tool_node` is part of `BUILTIN_MODES["code"]`'s workflow (`[context_node, model_node, approval_node, tool_node]`), always preceded by `approval_node` — a `code`-mode tool call is never ungated. `chat` still runs `[model_node]` only; `plan` never includes `tool_node`.
+**Wired:** `tool_node` is part of `BUILTIN_MODES["code"]`'s workflow (`[context_node, model_node, approval_node, tool_node]`), always preceded by `approval_node` — a `code`-mode tool call is never ungated. `chat` still runs `[model_node]` only; `plan` never includes `tool_node`.
 
 ## Permissions
 
@@ -202,10 +202,10 @@ MCP is a future adapter/integration boundary, not Woven's internal tool architec
 - `ContextFile` (`path: str`, `content: str`) and `ContextSnapshot` (`files: list[ContextFile] = []`) are the frozen data types — deliberately just files, no `symbols`/`conversation_history` fields since nothing reads them yet.
 - `FilesystemContext` (`src/woven/context/filesystem.py`) is the real, deterministic implementation, constructed with a `root: Path | str`. It has **no** `Fake`/`Mock` sibling: unlike `Model`/`Tool`, whose real implementations are inherently nondeterministic (network/LLM calls) — which is *why* `FakeModel`/`MockTools` exist — local filesystem reads with no embeddings are deterministic by construction, so `FilesystemContext` is directly usable in tests (with `tmp_path`). It raises `ContextError` for an explicit path that doesn't exist or that resolves outside `root`, and skips hidden directories (anything under a path component starting with `.`) during glob/text search.
 - `context_node` (`src/woven/workflow/core.py`) calls `state.context_source.retrieve(...)`, emits a single `ContextRetrieved` event (no Started/Completed pair — retrieval is a cheap synchronous local call, unlike a `Model`/`Tool` invocation), and writes the result into `state.context`.
-- `model_node` passes `context=state.context` into the `ModelRequest` it builds — this is the concrete `ContextSnapshot → ModelRequest` wiring the Slice 1 design anticipated below.
+- `model_node` passes `context=state.context` into the `ModelRequest` it builds — this is the concrete `ContextSnapshot → ModelRequest` wiring the original design anticipated below.
 - `WorkflowState.context_source: Context | None = None`, `context_request: ContextRequest | None = None`, `context: ContextSnapshot | None = None` — all optional, so `chat` (which sets none of them) is unaffected.
 
-**Wired as of Slice 7:** `context_node` is the first step in both `BUILTIN_MODES["plan"]` and `BUILTIN_MODES["code"]`.
+**Wired:** `context_node` is the first step in both `BUILTIN_MODES["plan"]` and `BUILTIN_MODES["code"]`.
 
 ### ContextSnapshot vs WorkflowState
 
@@ -263,7 +263,7 @@ The event sequence for a successful turn depends on the mode's step list:
 
 **Current implementation** (`src/woven/runtime/core.py`): four exception types, each raised by one collaborator on failure — `ModelError` (`Model`), `ToolError` (`Tool`), `ContextError` (`Context`), `ApprovalDenied` (`ApprovalPolicy`, via `approval_node`). `AgentRuntime.run_turn` catches all four in one `except (ModelError, ToolError, ContextError, ApprovalDenied) as exc:` clause, appends a `RunFailed` event (recording the failure before the exception surfaces to the caller), and re-raises — failures are recorded, never swallowed.
 
-Through Slice 6, only `ModelError` was reachable (no mode used `tool_node`/`context_node`/`approval_node`), so the `except` clause only needed to name it. Slice 7 is what first makes `ToolError`/`ContextError`/`ApprovalDenied` reachable through a real mode (`code`/`plan`) — the clause was broadened in that slice specifically to keep the "failures are recorded, never swallowed" invariant true once those modes exist, not narrowed to just the new `ApprovalDenied` case.
+Before `plan`/`code` modes existed, only `ModelError` was reachable (no mode used `tool_node`/`context_node`/`approval_node`), so the `except` clause only needed to name it. Adding `plan`/`code` is what first makes `ToolError`/`ContextError`/`ApprovalDenied` reachable through a real mode — the clause was broadened at that point specifically to keep the "failures are recorded, never swallowed" invariant true once those modes exist, not narrowed to just the new `ApprovalDenied` case.
 
 There is no broader exception hierarchy (e.g. no common `WovenError` base, no separate `WorkflowError`/`InvalidModeError`) — an unknown mode name still surfaces as a plain `KeyError` from the `BUILTIN_MODES` dict lookup, since there is only one caller path and wrapping it today would add a type with no behavioral difference.
 
@@ -288,7 +288,7 @@ Deterministic testing is a permanent architectural requirement: the runtime must
 | Workflow (straight-line steps) | Implemented |
 | Node abstraction | Not implemented — `model_node`/`tool_node`/`context_node`/`approval_node` are all plain functions; four node kinds now exist and still share no behavior beyond the common step signature (and a small extracted `_build_tool_request` helper), so no `Node` class was extracted |
 | WorkflowState | Implemented (fields added only as each node kind needed them) |
-| Model protocol, ModelRequest/Response, FakeModel | Implemented (`ModelRequest.context` added in Slice 5) |
+| Model protocol, ModelRequest/Response, FakeModel | Implemented (`ModelRequest.context` added once `context_node` existed) |
 | Events (12 types, callback-collected) | Implemented |
 | Errors (`ModelError`/`ToolError`/`ContextError`/`ApprovalDenied` → `RunFailed`) | Implemented |
 | Tools (`Tool` protocol, `tool_node`, `MockTools`) | Implemented — wired into `code` mode, always gated by `approval_node` |
