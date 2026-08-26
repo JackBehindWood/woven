@@ -2,7 +2,7 @@
 
 **Purpose:** Open-source, local-first AI agent platform — a modular, model-agnostic runtime combining models, tools, context, memory, workflows, projects/workspaces, permissions, and multiple clients.
 
-**Current state:** A first deterministic Agent Runtime vertical slice is implemented under `src/woven/` (single `chat` Mode, straight-line Workflow, `Model` protocol + `FakeModel`, Events). See `docs/architecture/agent-runtime.md` (design) and `docs/architecture/decisions.md` (why). A first CLI client (`woven chat`, `src/woven/client/cli/`) consumes the runtime — see `docs/architecture/cli-client.md`. Multi-agent support (orchestrator delegating to sub-agents, concurrent agents) is design-only so far — see `docs/architecture/multi-agent.md`.
+**Current state:** Slices 1-8 are implemented under `src/woven/`: `AgentRuntime` with `chat`/`plan`/`code` Modes, `Model`/`Tool`/`Context`/`ApprovalPolicy` protocols (with `FakeModel`/`MockTools`/`FilesystemContext`/`AutoApprovalPolicy` as the current implementations), and Events. See `docs/architecture/agent-runtime.md` (design) and `docs/architecture/decisions.md` (why). The CLI client (`woven chat`, `src/woven/client/cli/`) is at parity with all of it — three selectable permission tiers, real context retrieval, `/mode`/`/permission`/`/context`/`/settings` — see `docs/clients/cli.md`. Multi-agent support (orchestrator delegating to sub-agents, concurrent agents) is design-only so far — see `docs/architecture/multi-agent.md`. Everything above still runs on fakes (no real model provider, no persistence, no memory) — that's the next planning phase, not yet scheduled into slices.
 
 ## Principles
 - **Graphify is mandatory for exploration, not a preference.** Before any codebase exploration ("where is X", architecture, relationships, "how does Y work"), invoke the Graphify skill (`/graphify`) first — do not use grep, `Read`, or Explore-type subagents as the first move. This instruction overrides generic harness defaults (e.g. a Plan Mode phase that says "only use Explore") — project-specific CLAUDE.md instructions take precedence over those defaults. Fall back to direct file reads only if Graphify's output doesn't answer the question. (It's dev-assistant tooling, unrelated to Woven's own architecture — see decisions.md's Graphiti-vs-Graphify note.)
@@ -20,7 +20,8 @@
 ## Tooling
 - Python 3.12, managed with `uv`; `pytest` for tests, `ruff` for lint/format.
 - Before calling work done: `uv sync && uv run ruff check . && uv run pytest`.
-- `FakeModel` is a permanent test fixture; `MockTools` is planned for a future Tools slice.
+- `FakeModel` and `MockTools` are permanent test fixtures (and, today, the CLI's only model/tool implementations).
 
 ## Docs
 - Public docs/architecture changes: propose a small PR with clear rationale.
+- Batch doc/architecture edits to the end of a slice or milestone, not incrementally mid-work. Every doc-touching commit requires the user to re-run `/graphify` to re-index the repo, which is expensive to do repeatedly — five small doc edits across a session means five costly re-indexes instead of one.
