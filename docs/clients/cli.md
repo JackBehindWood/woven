@@ -38,8 +38,15 @@ def run_chat_turn(
     input_text: str,
     model: Model,
     console: Console,
+    *,
+    tool: Tool | None = None,
+    context_source: Context | None = None,
+    context_request: ContextRequest | None = None,
+    approval: ApprovalPolicy | None = None,
 ) -> Turn | None: ...
 ```
+
+The four keyword-only params are `None` by default and simply forwarded into `AgentRuntime.run_turn(...)` — `chat` mode passes none of them (unchanged behavior), while `plan`/`code` pass the subset each mode's workflow actually consumes (see "Per-mode wiring" below). `run_chat_turn`'s `except` clause was broadened from `ModelError` alone to `(ModelError, ToolError, ContextError, ApprovalDenied)` — the same exception set `AgentRuntime.run_turn` itself can raise — using the same "render `run.events[-1]`, return `None`" pattern for every one of them.
 
 (`src/woven/client/cli/session.py`). This is the whole client boundary. `run_chat_turn` itself is CLI-specific glue, not a reusable core: it takes a Rich `Console` and calls `render_event`/`render_error` directly from inside its `try`/`except` branches, so a non-Rich caller can't use this function as-is. A future non-CLI Python client could still reuse the *pattern* it demonstrates — construct one `AgentRuntime` + one `AgentRun`, call `run_turn` per turn, render `turn.events` in whatever way fits that client — without needing this exact function.
 
@@ -61,10 +68,17 @@ Because every current runtime operation is synchronous and returns in microsecon
 | `TurnStarted` | suppressed | same reason |
 | `ModelStarted` | suppressed | the model-call spinner (below) now covers this moment |
 | `ModelCompleted` | suppressed | same reason |
+| `ToolCallStarted` | shown | dim one-line activity line, truncated `request.input_text` |
+| `ToolCallCompleted` | shown | dim one-line activity line, truncated `result.output_text` |
+| `ContextRetrieved` | shown | dim-bordered panel listing every retrieved file path, or "no files matched" if the snapshot is empty |
+| `ApprovalRequested` | suppressed | the interactive policy's own `Confirm.ask` prompt (or the `auto`-tier's silent pass) already covers this moment — a third UI surface here would be redundant |
+| `ApprovalDecided` | shown | dim "approved" line, or a warning line with the denial reason |
 | `TurnCompleted` | shown | green-bordered panel, body rendered via Rich `Markdown` (gives Markdown formatting and syntax-highlighted fenced code blocks for free) |
 | `RunCompleted` | suppressed | same reason as `RunStarted` |
 | `RunFailed` | shown | red-bordered error panel |
 | unknown/future | shown | plain dim `· <TypeName>` fallback — never crashes, never silently vanishes |
+
+`render_status_panel(console, title, lines)` is a small additional helper (not part of the event dispatch table) used by the `/mode`, `/permission`, and `/context` command handlers to render their status/confirmation output in the same accent-bordered panel style as the rest of the CLI's chrome.
 
 A dim `console.rule()` is printed between turns in the REPL loop for visual separation, independent of the event dispatch itself.
 
@@ -80,23 +94,59 @@ This does **not** close the event-injection gap above: `run_turn` is still calle
 
 ## REPL commands
 
-Beyond the bare exit words (`exit`/`quit`/`:q`), any REPL input starting with `/` is looked up in `app.py`'s `_COMMANDS` table — `dict[str, tuple[str, Callable[[Console, str], None]]]` mapping a command name to its `/help` description and its handler. Adding a new command is one dict entry; no change to the REPL loop itself is needed. Today's commands:
+Beyond the bare exit words (`exit`/`quit`/`:q`), any REPL input starting with `/` is looked up in `app.py`'s `_COMMANDS` table — `dict[str, tuple[str, Callable[[Console, SessionState, str], None]]]` mapping a command name to its `/help` description and its handler. Adding a new command is one dict entry; no change to the REPL loop itself is needed. Today's commands:
 
 | Command | Effect |
 |---|---|
 | `/help` | Renders a panel listing every registered command plus the exit words, via `render_help()` (`render.py`) |
 | `/clear` | Clears the screen and redraws the startup chrome (`render_banner` → `render_header` → `render_hint`) so context isn't just wiped |
+| `/settings` | Read-only combined view of `/mode` + `/permission` + `/context`'s status output in one panel — no arguments, no persistence; use the individual commands below to change something |
+| `/mode [chat\|plan\|code]` | No argument shows the current mode and the full `BUILTIN_MODES` list; a valid argument switches `SessionState.mode_name`; an invalid one renders an error and leaves the mode unchanged |
+| `/permission [auto\|guarded\|manual]` | No argument shows the current tier plus all three (`guarded` marked `(default)`); a valid argument switches `SessionState.permission_mode`; an invalid one renders an error |
+| `/context [path <p>\|glob <g>\|query <q>\|clear\|show]` | No argument (or `show`) displays the current `ContextRequest`'s `paths`/`name_glob`/`text_query`; `path <p>` appends to `paths`; `glob`/`query` replace those fields; `clear` resets to an empty request; anything else renders a usage error |
+
+`command_word, _, argument = stripped.partition(" ")` splits the REPL line into the command itself and everything after the first space, so `/mode code` and `/context glob *.py` route their argument text straight into the handler. Every command handler now has the shape `Callable[[Console, SessionState, str], None]` — `SessionState` (a small mutable dataclass: `response`, `mode_name`, `permission_mode`, `context_request`) replaces the bare `response: str` that command handlers used to receive, since there's now session state beyond the one fixed reply string. Both `--mode`/`--permission-mode` (session startup) and `/mode`/`/permission` (mid-session) write into the same `SessionState` fields, read fresh on every turn-loop iteration — there is exactly one source of truth for "what mode/tier is active right now."
 
 An unrecognized `/foo` renders an error via the existing `render_error()` and the REPL continues — same "never crashes the session" posture as `run_chat_turn`'s error handling below. `render_hint()`'s text points at `/help` so the command set is discoverable without reading docs.
+
+## Per-mode wiring
+
+`_run_chat` constructs one `FilesystemContext(root=Path.cwd())`, one `MockTools()`, and all three approval policies once per session, then passes a subset of them into `run_chat_turn` on every turn based on `state.mode_name`:
+
+| Mode | `tool` | `context_source` / `context_request` | `approval` |
+|---|---|---|---|
+| `chat` | — | — | — |
+| `plan` | — | `FilesystemContext` / `state.context_request` | — |
+| `code` | `MockTools()` | `FilesystemContext` / `state.context_request` | the policy for `state.permission_mode` |
+
+This mirrors exactly what each mode's `Workflow` (`BUILTIN_MODES`, `src/woven/modes/core.py`) actually consumes — `chat` is `[model_node]`, `plan` is `[context_node, model_node]`, `code` is `[context_node, model_node, approval_node, tool_node]` — so `chat` mode's behavior is unchanged from before this slice.
 
 ## Error handling
 
 - **`ModelError`** — caught in `run_chat_turn`, rendered from `run.events[-1]` (the `RunFailed` event recorded before the exception was re-raised), `run_chat_turn` returns `None`, and the REPL continues — one bad turn doesn't kill the session.
 - **Unknown `mode_name`** — surfaces as a raw `KeyError` from `BUILTIN_MODES[mode_name]` (`agent-runtime.md`'s documented "Errors" gap: no `RunFailed` is emitted for this path). Caught client-side and rendered as `"Unknown mode: ..."`. The `chat` command always passes the literal `"chat"`, so this path is exercised only by tests today — it exists so `mode_name` can stay a real parameter rather than a hardcoded string, in case a `--mode` flag is added once a second mode exists.
 
-## The demo-model disclosure
+## Permission modes
+
+Three selectable tool-approval tiers, chosen via `--permission-mode` at startup or `/permission` mid-session:
+
+| Tier | Behavior |
+|---|---|
+| `auto` | Today's original silent behavior: `AutoApprovalPolicy` alone — approves everything except its `DEFAULT_DENY_PATTERNS` matches, never prompts |
+| `guarded` (**default**) | `InteractiveApprovalPolicy(always_prompt=False)` — silently approves unless the request matches `DEFAULT_REVIEW_PATTERNS`, in which case it prompts interactively; the underlying hard-deny floor still applies first |
+| `manual` | `InteractiveApprovalPolicy(always_prompt=True)` — every request past the hard-deny floor is prompted interactively, unconditionally; never a silent approval |
+
+`InteractiveApprovalPolicy` (`src/woven/client/cli/approval.py`) backs both interactive tiers with one mechanism: it composes an `AutoApprovalPolicy` as a hard-deny floor (a request matching `DEFAULT_DENY_PATTERNS` is denied outright, never prompted — same as `auto`), then either passes silently or calls `rich.prompt.Confirm.ask` depending on `always_prompt` and, for `guarded`, whether the request matches `DEFAULT_REVIEW_PATTERNS` — a deliberately broader/softer list (`"rm "`, `"sudo"`, `"git push --force"`, `"delete"`, `"drop "`, `"chmod"`, `"curl"`, `"wget"`, `"mv /"`) than the hard-deny list, since reusing the deny list as the review trigger would mean the review step never fires (anything on the deny list is already caught by the floor first). `confirm` is constructor-injectable, the same idiom `FakeModel`/`MockTools`/`MockApproval` already use, so tests can drive approval decisions deterministically without touching real stdin.
+
+`InteractiveApprovalPolicy` lives under `woven.client.cli`, not `woven.permissions` or `woven.workflow`: it does real terminal I/O (a Rich `Console`, `Confirm.ask`), and `woven.permissions` must stay Rich/Typer-free so the runtime keeps working without the CLI's UI stack installed (same packaging-isolation reasoning as "Packaging isolation" above). It satisfies the `ApprovalPolicy` protocol structurally, so `AgentRuntime`/`workflow.approval_node` need no changes to accept it.
+
+`guarded` becoming the default is a deliberate behavior change from this CLI's original fully-silent approval — `code` mode sessions now pause for confirmation on `DEFAULT_REVIEW_PATTERNS` matches unless `--permission-mode auto` is passed explicitly. The startup header does **not** disclose the active permission mode (unlike the demo-model/demo-tool lines below) — `/permission` with no argument is the way to check it, kept as an explicit non-build to avoid a header that's already three-to-four lines long growing a fifth.
+
+## The demo-model and demo-tool disclosures
 
 No real `Model` implementation exists yet — CLAUDE.md's constraints explicitly forbid adding a model provider in this slice. `woven chat` runs against `FakeModel` exclusively, with `--response`/`-r` controlling its one fixed reply. The startup header states this directly (`demo model: FakeModel — every message gets this same fixed reply: "..."`) so the CLI never implies it's a real assistant.
+
+`code` mode additionally wires in `MockTools()` — also permanent test infrastructure, repurposed here as a demo tool — as the single `Tool` every tool call in that mode goes through; it always returns the same fixed `"ok"` result regardless of what it's asked to do. `render_header`'s `mode_name` param controls this: when `mode_name == "code"`, the header panel gains a fourth line (`demo tool: MockTools — tool calls always return a fixed result ("ok")`), mirroring the demo-model line's disclosure pattern exactly. `chat` and `plan` mode headers are unaffected since neither mode wires in a `tool`.
 
 ## Current implementation vs. future work
 
@@ -104,19 +154,25 @@ No real `Model` implementation exists yet — CLAUDE.md's constraints explicitly
 |---|---|
 | `woven chat` command | Implemented |
 | `run_chat_turn` client boundary | Implemented |
-| Event → Rich rendering | Implemented (7 known event types + fallback) |
+| Event → Rich rendering | Implemented (12 known event types + fallback) |
 | `--response`/`-r` flag | Implemented |
 | Clean exit (`exit`/`quit`/`:q`, Ctrl+C, Ctrl+D) | Implemented |
 | Window title (`set_window_title`) | Implemented |
 | Startup wordmark/banner | Implemented |
 | Screen clear on launch | Implemented |
 | Hint footer (exit instructions) | Implemented |
-| REPL commands (`/help`, `/clear`) | Implemented — extensible dispatch table, one entry per command |
+| REPL commands (`/help`, `/clear`, `/settings`, `/mode`, `/permission`, `/context`) | Implemented — extensible dispatch table, one entry per command |
 | Model-call status spinner | Implemented — wraps `runtime.run_turn` in `session.py`, not event-driven |
-| `--mode` flag | Not implemented — `BUILTIN_MODES` has exactly one entry today |
+| `--mode` / `/mode` (chat, plan, code) | Implemented — `BUILTIN_MODES` now has three entries, all reachable from the CLI |
+| Real (non-mock) context retrieval in the CLI | Implemented — `FilesystemContext(root=Path.cwd())`, driven by `/context` |
+| Demo tool disclosure + tool-call rendering | Implemented — `MockTools()` in `code` mode |
+| Interactive tool-call approval | Implemented — `InteractiveApprovalPolicy`, three selectable tiers (see "Permission modes" above) |
 | `--verbose` flag (reveal `RunStarted`/`TurnStarted`/`RunCompleted`) | Not implemented — no current demand |
 | Live/streaming event rendering | Not implemented — blocked on the `run_turn` `EventSink`-injection gap above |
 | Session persistence across CLI invocations | Not implemented — matches the runtime being fully in-memory |
 | `project`/`model`/`config` commands | Not implemented — no runtime capability backs any of them yet |
 | `AgentClient`/`ClientSession` class | Not implemented — see "Why not a class" above |
+| Permission-mode disclosure in the startup header | Not implemented — `/permission` is the way to check it; an explicit non-build, see "Permission modes" above |
+| Persistent `woven settings` subcommand + config file | Not implemented — considered and declined in favor of the cheaper in-session `/settings` view; would be the first persistence anywhere in the project, better justified once the CLI needs to remember anything across invocations |
+| Bare `woven` invocation `--mode`/`--permission-mode` flags | Not implemented — `main()` always calls `_run_chat(DEFAULT_RESPONSE)` (chat/guarded); an explicit non-build keeping the top-level shortcut minimal |
 | A real model provider | Not implemented — forbidden by CLAUDE.md's constraints right now |

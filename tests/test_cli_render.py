@@ -3,18 +3,32 @@ import io
 from rich.console import Console
 
 from woven.client.cli.console import make_console
-from woven.client.cli.render import render_banner, render_event, render_hint
+from woven.client.cli.render import (
+    render_banner,
+    render_event,
+    render_header,
+    render_hint,
+    render_status_panel,
+)
+from woven.context import ContextFile, ContextSnapshot
 from woven.events import (
+    ApprovalDecided,
+    ApprovalRequested,
+    ContextRetrieved,
     Event,
     ModelCompleted,
     ModelStarted,
     RunCompleted,
     RunFailed,
     RunStarted,
+    ToolCallCompleted,
+    ToolCallStarted,
     TurnCompleted,
     TurnStarted,
 )
 from woven.models import ModelRequest, ModelResponse
+from woven.permissions import ApprovalDecision
+from woven.tools import ToolRequest, ToolResult
 
 
 def _capturing_console() -> tuple[Console, io.StringIO]:
@@ -94,3 +108,129 @@ def test_unknown_event_type_falls_back_without_crashing():
     render_event(_FutureEvent(turn_id="t1"), console)
 
     assert "_FutureEvent" in buffer.getvalue()
+
+
+def test_tool_call_started_renders_input_text():
+    console, buffer = _capturing_console()
+
+    render_event(
+        ToolCallStarted(
+            turn_id="t1", request=ToolRequest(purpose="tool_call", input_text="do it")
+        ),
+        console,
+    )
+
+    assert "do it" in buffer.getvalue()
+
+
+def test_tool_call_completed_renders_output_text():
+    console, buffer = _capturing_console()
+
+    render_event(
+        ToolCallCompleted(turn_id="t1", result=ToolResult(output_text="done")),
+        console,
+    )
+
+    assert "done" in buffer.getvalue()
+
+
+def test_context_retrieved_renders_file_paths():
+    console, buffer = _capturing_console()
+
+    render_event(
+        ContextRetrieved(
+            turn_id="t1",
+            snapshot=ContextSnapshot(files=[ContextFile(path="a.py", content="x")]),
+        ),
+        console,
+    )
+
+    assert "a.py" in buffer.getvalue()
+
+
+def test_context_retrieved_renders_no_files_matched_when_empty():
+    console, buffer = _capturing_console()
+
+    render_event(
+        ContextRetrieved(turn_id="t1", snapshot=ContextSnapshot(files=[])),
+        console,
+    )
+
+    assert "no files matched" in buffer.getvalue()
+
+
+def test_approval_requested_is_suppressed():
+    console, buffer = _capturing_console()
+
+    render_event(
+        ApprovalRequested(
+            turn_id="t1", request=ToolRequest(purpose="tool_call", input_text="x")
+        ),
+        console,
+    )
+
+    assert buffer.getvalue() == ""
+
+
+def test_approval_decided_approved_renders_approved_line():
+    console, buffer = _capturing_console()
+
+    render_event(
+        ApprovalDecided(turn_id="t1", decision=ApprovalDecision(approved=True)),
+        console,
+    )
+
+    assert "approved" in buffer.getvalue()
+
+
+def test_approval_decided_denied_renders_reason():
+    console, buffer = _capturing_console()
+
+    render_event(
+        ApprovalDecided(
+            turn_id="t1",
+            decision=ApprovalDecision(approved=False, reason="too risky"),
+        ),
+        console,
+    )
+
+    output = buffer.getvalue()
+    assert "denied" in output
+    assert "too risky" in output
+
+
+def test_render_header_default_mode_has_no_tool_disclosure():
+    console, buffer = _capturing_console()
+
+    render_header(console, response_text="hi")
+
+    assert "MockTools" not in buffer.getvalue()
+
+
+def test_render_header_code_mode_discloses_mock_tools():
+    console, buffer = _capturing_console()
+
+    render_header(console, response_text="hi", mode_name="code")
+
+    output = buffer.getvalue()
+    assert "MockTools" in output
+    assert "code" in output
+
+
+def test_render_header_plan_mode_shows_mode_name():
+    console, buffer = _capturing_console()
+
+    render_header(console, response_text="hi", mode_name="plan")
+
+    assert "plan" in buffer.getvalue()
+
+
+def test_render_status_panel_prints_title_and_lines():
+    console, buffer = _capturing_console()
+
+    render_status_panel(console, "status", ["line one", "line two"])
+
+    output = buffer.getvalue()
+    assert "status" in output
+    assert "line one" in output
+    assert "line two" in output
