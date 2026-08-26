@@ -19,11 +19,22 @@ from woven.client.cli.render import (
     render_status_panel,
 )
 from woven.client.cli.session import run_chat_turn
+from woven.client.cli.settings_command import settings_app
 from woven.context import ContextRequest, FilesystemContext
 from woven.models import FakeModel
 from woven.modes import BUILTIN_MODES
 from woven.permissions import ApprovalPolicy, AutoApprovalPolicy
 from woven.runtime import AgentRun, AgentRuntime
+from woven.settings import (
+    PROVIDER_ENV_VARS,
+    ConfigError,
+    FileSecretStore,
+    RuntimeConfig,
+    SecretStore,
+    load_config,
+    resolve_api_key,
+    resolve_runtime_config,
+)
 from woven.tools import MockTools
 
 app = typer.Typer(
@@ -31,6 +42,7 @@ app = typer.Typer(
     help="Woven — a local-first AI agent platform. This is an early CLI slice.",
     add_completion=False,
 )
+app.add_typer(settings_app, name="settings")
 
 DEFAULT_RESPONSE = "This is a fixed demo reply — Woven has no real model connected yet."
 _EXIT_WORDS = {"exit", "quit", ":q"}
@@ -52,6 +64,10 @@ class SessionState:
     context_request: ContextRequest = field(
         default_factory=lambda: ContextRequest(purpose="context_retrieval")
     )
+    persisted_runtime: RuntimeConfig = field(
+        default_factory=lambda: RuntimeConfig(mode="chat", permission_mode="guarded")
+    )
+    secret_store: SecretStore = field(default_factory=FileSecretStore)
 
 
 def _handle_help(console: Console, state: SessionState, argument: str) -> None:
@@ -160,7 +176,13 @@ def _handle_settings(console: Console, state: SessionState, argument: str) -> No
         f"mode: {state.mode_name}",
         f"permission: {state.permission_mode}",
         *_context_status_lines(state.context_request),
+        f"persisted default mode: {state.persisted_runtime.mode}",
+        f"persisted default permission: {state.persisted_runtime.permission_mode}",
     ]
+    for provider in sorted(PROVIDER_ENV_VARS):
+        status = "set" if resolve_api_key(state.secret_store, provider) else "not set"
+        lines.append(f"{provider} api key: {status}")
+    lines.append("hint: use `woven settings set <field> <value>` to change defaults")
     render_status_panel(console, "settings", lines)
 
 
@@ -199,16 +221,18 @@ def chat(
         "-r",
         help="Fixed text the demo model replies with (no real model is connected yet).",
     ),
-    mode: str = typer.Option(
-        "chat",
+    mode: str | None = typer.Option(
+        None,
         "--mode",
         "-m",
-        help="Mode to run the session in: chat, plan, or code.",
+        help="Mode to run the session in: chat, plan, or code. "
+        "Defaults to the persisted setting.",
     ),
-    permission_mode: str = typer.Option(
-        "guarded",
+    permission_mode: str | None = typer.Option(
+        None,
         "--permission-mode",
-        help="Tool-approval tier: auto, guarded (default), or manual.",
+        help="Tool-approval tier: auto, guarded, or manual. "
+        "Defaults to the persisted setting.",
     ),
 ) -> None:
     """Start an interactive chat session against a built-in Mode.
@@ -222,9 +246,22 @@ def chat(
 
 
 def _run_chat(
-    response: str, *, mode: str = "chat", permission_mode: str = "guarded"
+    response: str, *, mode: str | None = None, permission_mode: str | None = None
 ) -> None:
     console = make_console()
+
+    try:
+        config = load_config()
+    except ConfigError as exc:
+        render_error(console, str(exc))
+        raise typer.Exit(code=1) from None
+
+    persisted_runtime = resolve_runtime_config(config)
+    runtime_config = resolve_runtime_config(
+        config, mode=mode, permission_mode=permission_mode
+    )
+    mode = runtime_config.mode
+    permission_mode = runtime_config.permission_mode
 
     if mode not in BUILTIN_MODES:
         render_error(
@@ -247,7 +284,11 @@ def _run_chat(
     render_hint(console)
 
     state = SessionState(
-        response=response, mode_name=mode, permission_mode=permission_mode
+        response=response,
+        mode_name=mode,
+        permission_mode=permission_mode,
+        persisted_runtime=persisted_runtime,
+        secret_store=FileSecretStore(),
     )
 
     runtime = AgentRuntime()

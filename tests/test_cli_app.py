@@ -2,6 +2,14 @@ import pytest
 from typer.testing import CliRunner
 
 from woven.client.cli.app import app
+from woven.settings import (
+    Config,
+    FileSecretStore,
+    Settings,
+    config_path,
+    load_config,
+    save_config,
+)
 
 runner = CliRunner()
 
@@ -99,6 +107,35 @@ def test_settings_command_reflects_mode_and_context_changes():
     output = result.stdout
     assert "mode: code" in output
     assert "*.py" in output
+
+
+def test_settings_command_shows_persisted_defaults_and_hint():
+    result = runner.invoke(app, ["chat"], input="/settings\nexit\n")
+
+    output = result.stdout
+    assert "persisted default mode: chat" in output
+    assert "persisted default permission: guarded" in output
+    assert "gemini api key: not set" in output
+    assert "woven settings set" in output
+
+
+def test_settings_command_shows_gemini_api_key_set_from_persisted_value():
+    load_config()
+    FileSecretStore().set("gemini_api_key", "persisted-secret")
+
+    result = runner.invoke(app, ["chat"], input="/settings\nexit\n")
+
+    assert "gemini api key: set" in result.stdout
+    assert "persisted-secret" not in result.stdout
+
+
+def test_settings_command_shows_gemini_api_key_set_from_env(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "env-secret")
+
+    result = runner.invoke(app, ["chat"], input="/settings\nexit\n")
+
+    assert "gemini api key: set" in result.stdout
+    assert "env-secret" not in result.stdout
 
 
 def test_mode_flag_switches_header_to_plan():
@@ -310,3 +347,65 @@ def test_dangerous_pattern_denies_regardless_of_tier(permission_mode):
     assert result.exit_code == 0
     assert "Approve tool call?" not in result.stdout
     assert "Turn failed" in result.stdout
+
+
+def test_chat_with_no_mode_flag_uses_persisted_default_mode():
+    config = load_config()
+    save_config(
+        Config(
+            user=config.user,
+            settings=Settings(default_mode="plan"),
+        )
+    )
+
+    result = runner.invoke(app, ["chat"], input="exit\n")
+
+    assert result.exit_code == 0
+    assert "woven plan" in result.stdout
+
+
+def test_mode_flag_overrides_persisted_default():
+    config = load_config()
+    save_config(
+        Config(
+            user=config.user,
+            settings=Settings(default_mode="plan"),
+        )
+    )
+
+    result = runner.invoke(app, ["chat", "--mode", "code"], input="exit\n")
+
+    assert result.exit_code == 0
+    assert "woven code" in result.stdout
+
+
+def test_permission_mode_flag_overrides_persisted_default():
+    config = load_config()
+    save_config(
+        Config(
+            user=config.user,
+            settings=Settings(default_permission_mode="manual"),
+        )
+    )
+
+    result = runner.invoke(
+        app,
+        ["chat", "--permission-mode", "auto"],
+        input="/permission\nexit\n",
+    )
+
+    assert result.exit_code == 0
+    assert "current: auto" in result.stdout
+
+
+def test_corrupt_config_file_exits_with_error_naming_path(monkeypatch):
+    load_config()  # ensures the config file exists
+    path = config_path()
+    path.write_text("not json")
+    monkeypatch.setenv("COLUMNS", "400")
+
+    result = runner.invoke(app, ["chat"])
+    normalized_stdout = " ".join(result.stdout.split())
+
+    assert result.exit_code == 1
+    assert str(path) in normalized_stdout
