@@ -66,6 +66,8 @@ To set up locally:
 
 The package lives under `src/woven/`. Try the CLI with `uv run woven chat` (after syncing `--extra cli`).
 
+**Known issue: editable-install / venv flakiness.** Occasionally `uv run woven` (or `import woven`) fails with `ModuleNotFoundError: No module named 'woven'` even though `uv sync` reports success. This is a stray `.pth`-ordering bug in the dev venv, triggered by `virtualenv` (a transitive dependency of `pre-commit`) racing the editable install — not a code issue. It has recurred more than once, so don't re-debug it from scratch: `.python-version` (pinning `3.12`) and `pyproject.toml`'s `[tool.uv] python-preference = "managed"` reduce how often it happens; if it still occurs, `rm -rf .venv && uv sync --all-extras` (or `uv sync --all-extras --reinstall-package woven`) clears it.
+
 ## Testing
 
 Testing is deterministic-first. The repository includes a tests README explaining the testing philosophy. Unit tests that don't depend on model quality are preferred; model/provider integration tests should be opt-in and run separately.
