@@ -4,6 +4,7 @@ import uuid
 
 from pydantic import BaseModel, Field
 
+from woven.context import Context, ContextError, ContextRequest
 from woven.events import (
     Event,
     RunCompleted,
@@ -14,6 +15,8 @@ from woven.events import (
 )
 from woven.models import Model, ModelError
 from woven.modes import BUILTIN_MODES
+from woven.permissions import ApprovalDenied, ApprovalPolicy
+from woven.tools import Tool, ToolError
 from woven.workflow import WorkflowState
 
 
@@ -33,7 +36,16 @@ class AgentRun(BaseModel):
 
 class AgentRuntime:
     def run_turn(
-        self, run: AgentRun, mode_name: str, input_text: str, model: Model
+        self,
+        run: AgentRun,
+        mode_name: str,
+        input_text: str,
+        model: Model,
+        *,
+        tool: Tool | None = None,
+        context_source: Context | None = None,
+        context_request: ContextRequest | None = None,
+        approval: ApprovalPolicy | None = None,
     ) -> Turn:
         turn = Turn(
             turn_id=uuid.uuid4().hex, mode_name=mode_name, input_text=input_text
@@ -48,11 +60,19 @@ class AgentRuntime:
 
         mode = BUILTIN_MODES[mode_name]
         workflow = mode.workflow_factory()
-        state = WorkflowState(turn_id=turn.turn_id, input_text=input_text, model=model)
+        state = WorkflowState(
+            turn_id=turn.turn_id,
+            input_text=input_text,
+            model=model,
+            tool=tool,
+            context_source=context_source,
+            context_request=context_request,
+            approval=approval,
+        )
 
         try:
             state = workflow.run(state, emit)
-        except ModelError as exc:
+        except (ModelError, ToolError, ContextError, ApprovalDenied) as exc:
             emit(RunFailed(turn_id=turn.turn_id, run_id=run.run_id, error=str(exc)))
             raise
 

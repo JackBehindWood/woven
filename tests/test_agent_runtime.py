@@ -1,16 +1,24 @@
 import pytest
 
+from woven.context import ContextError, ContextRequest, FilesystemContext
 from woven.events import (
+    ApprovalDecided,
+    ApprovalRequested,
+    ContextRetrieved,
     ModelCompleted,
     ModelStarted,
     RunCompleted,
     RunFailed,
     RunStarted,
+    ToolCallCompleted,
+    ToolCallStarted,
     TurnCompleted,
     TurnStarted,
 )
 from woven.models import FakeModel, ModelError
+from woven.permissions import ApprovalDenied, AutoApprovalPolicy, MockApproval
 from woven.runtime import AgentRun, AgentRuntime
+from woven.tools import MockTools, ToolError
 
 
 def test_run_turn_executes_and_returns_output():
@@ -77,3 +85,156 @@ def test_run_turn_failure_produces_failure_event_and_propagates():
         ModelStarted,
         RunFailed,
     ]
+
+
+def test_run_turn_plan_mode_executes_context_and_model(tmp_path):
+    (tmp_path / "a.txt").write_text("file contents")
+    runtime = AgentRuntime()
+    run = AgentRun(run_id="r1")
+
+    turn = runtime.run_turn(
+        run,
+        "plan",
+        "hi",
+        FakeModel(response_text="plan reply"),
+        context_source=FilesystemContext(tmp_path),
+        context_request=ContextRequest(purpose="p", paths=["a.txt"]),
+    )
+
+    assert turn.output_text == "plan reply"
+    assert [type(e) for e in turn.events] == [
+        RunStarted,
+        TurnStarted,
+        ContextRetrieved,
+        ModelStarted,
+        ModelCompleted,
+        TurnCompleted,
+        RunCompleted,
+    ]
+
+
+def test_run_turn_plan_mode_missing_context_path_produces_failure_event(tmp_path):
+    runtime = AgentRuntime()
+    run = AgentRun(run_id="r1")
+
+    with pytest.raises(ContextError):
+        runtime.run_turn(
+            run,
+            "plan",
+            "hi",
+            FakeModel(response_text="plan reply"),
+            context_source=FilesystemContext(tmp_path),
+            context_request=ContextRequest(purpose="p", paths=["missing.txt"]),
+        )
+
+    assert [type(e) for e in run.events] == [
+        RunStarted,
+        TurnStarted,
+        RunFailed,
+    ]
+
+
+def test_run_turn_code_mode_executes_full_pipeline_when_approved(tmp_path):
+    (tmp_path / "a.txt").write_text("file contents")
+    runtime = AgentRuntime()
+    run = AgentRun(run_id="r1")
+    tool = MockTools(output_text="tool result")
+
+    turn = runtime.run_turn(
+        run,
+        "code",
+        "hi",
+        FakeModel(response_text="model reply"),
+        context_source=FilesystemContext(tmp_path),
+        context_request=ContextRequest(purpose="p", paths=["a.txt"]),
+        approval=MockApproval(approve=True),
+        tool=tool,
+    )
+
+    assert turn.output_text == "tool result"
+    assert [type(e) for e in turn.events] == [
+        RunStarted,
+        TurnStarted,
+        ContextRetrieved,
+        ModelStarted,
+        ModelCompleted,
+        ApprovalRequested,
+        ApprovalDecided,
+        ToolCallStarted,
+        ToolCallCompleted,
+        TurnCompleted,
+        RunCompleted,
+    ]
+
+
+def test_run_turn_code_mode_denied_by_mock_approval_stops_before_tool(tmp_path):
+    (tmp_path / "a.txt").write_text("file contents")
+    runtime = AgentRuntime()
+    run = AgentRun(run_id="r1")
+    tool = MockTools(output_text="tool result")
+
+    with pytest.raises(ApprovalDenied):
+        runtime.run_turn(
+            run,
+            "code",
+            "hi",
+            FakeModel(response_text="model reply"),
+            context_source=FilesystemContext(tmp_path),
+            context_request=ContextRequest(purpose="p", paths=["a.txt"]),
+            approval=MockApproval(approve=False),
+            tool=tool,
+        )
+
+    assert [type(e) for e in run.events] == [
+        RunStarted,
+        TurnStarted,
+        ContextRetrieved,
+        ModelStarted,
+        ModelCompleted,
+        ApprovalRequested,
+        ApprovalDecided,
+        RunFailed,
+    ]
+    assert tool.received_requests == []
+
+
+def test_run_turn_code_mode_denied_by_auto_approval_stops_before_tool(tmp_path):
+    (tmp_path / "a.txt").write_text("file contents")
+    runtime = AgentRuntime()
+    run = AgentRun(run_id="r1")
+    tool = MockTools(output_text="tool result")
+
+    with pytest.raises(ApprovalDenied):
+        runtime.run_turn(
+            run,
+            "code",
+            "hi",
+            FakeModel(response_text="please run rm -rf / now"),
+            context_source=FilesystemContext(tmp_path),
+            context_request=ContextRequest(purpose="p", paths=["a.txt"]),
+            approval=AutoApprovalPolicy(),
+            tool=tool,
+        )
+
+    assert tool.received_requests == []
+    assert [type(e) for e in run.events][-1] is RunFailed
+
+
+def test_run_turn_code_mode_tool_error_produces_failure_event(tmp_path):
+    (tmp_path / "a.txt").write_text("file contents")
+    runtime = AgentRuntime()
+    run = AgentRun(run_id="r1")
+
+    with pytest.raises(ToolError):
+        runtime.run_turn(
+            run,
+            "code",
+            "hi",
+            FakeModel(response_text="model reply"),
+            context_source=FilesystemContext(tmp_path),
+            context_request=ContextRequest(purpose="p", paths=["a.txt"]),
+            approval=MockApproval(approve=True),
+            tool=MockTools(raise_error=True),
+        )
+
+    assert [type(e) for e in run.events][-1] is RunFailed

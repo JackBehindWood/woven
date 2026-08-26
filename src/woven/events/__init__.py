@@ -1,21 +1,31 @@
 from woven.events.core import (
+    ApprovalDecided,
+    ApprovalRequested,
+    ContextRetrieved,
     Event,
     ModelCompleted,
     ModelStarted,
     RunCompleted,
     RunFailed,
     RunStarted,
+    ToolCallCompleted,
+    ToolCallStarted,
     TurnCompleted,
     TurnStarted,
 )
 
 __all__ = [
+    "ApprovalDecided",
+    "ApprovalRequested",
+    "ContextRetrieved",
     "Event",
     "ModelCompleted",
     "ModelStarted",
     "RunCompleted",
     "RunFailed",
     "RunStarted",
+    "ToolCallCompleted",
+    "ToolCallStarted",
     "TurnCompleted",
     "TurnStarted",
 ]
