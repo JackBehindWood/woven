@@ -53,6 +53,15 @@ While planning Slice 3 (Tools), the current architecture (`AgentRuntime`, `Agent
 
 **Bottom line:** Slice 3's concrete `Tool`/`tool_node`/`MockTools` design has no tension with any of the above — none of these seams are made bigger or smaller by adding a second node kind. The two real gaps (single-agent-scoped `Event`/`AgentRun`, and the tool-as-agent equivalence) already exist independent of Tools; nothing here changes what Slice 3 built.
 
+## 2026-08-26 — Multi-agent architecture design (Slice 4, design-only)
+
+The analysis above was turned into a full design doc: `docs/architecture/multi-agent.md`. Two forks left open by the analysis above were resolved with the project owner before writing it:
+
+- **Nesting model:** a sub-agent's events are flattened into the parent `AgentRun.events` (tagged with `agent_id`) *and* the sub-agent's `Turn`/`AgentRun` object is retained via a nested `WorkflowState.sub_runs` reference — both, not one or the other, to avoid the lossy-adapter problem named above while keeping today's flat-list CLI rendering unchanged.
+- **Orchestrator shape:** a plain Workflow step (`agent_node`), same `Callable[[WorkflowState, EventSink], WorkflowState]` signature as `model_node`/`tool_node` — not a new Mode-level composition concept, and no new `Node` class.
+
+`multi-agent.md` also concludes `AgentRuntime` needs no new method for concurrency (multiple `AgentRun` instances already suffice) and names the concrete mechanism `agent_node` would need beyond `tool_node`'s shape: re-emitting a child `Turn`'s events through the parent's `emit` closure, since the child's own `emit` closes over the child's `turn`/`run`, not the parent's. All new fields/events (`agent_id`, `parent_run_id`, `sub_runs`, `SubAgentStarted`/`Completed`) are deferred until an orchestrator is actually built — same non-speculative-addition reasoning as `turn_id` and the `Node` abstraction above. See `multi-agent.md` for the full design.
+
 ## 2026-08-26 — Editable-install/venv flakiness: actual fix, not just a workaround
 
 The "known issue" documented in README (stray `.pth`-ordering bug, `ModuleNotFoundError: No module named 'woven'`) was suspected to stem from `virtualenv` — a real transitive dependency of `pre-commit` — being installed into the *same* `.venv` as `woven`'s own editable install, since `pre-commit` lived in `[project.optional-dependencies].dev`. Rather than only documenting a recovery command, the actual trigger for that coexistence is removed:
