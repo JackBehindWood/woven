@@ -21,29 +21,37 @@ from woven.events import (
 )
 
 
+def render_banner(console: Console) -> None:
+    console.print("[woven.accent]W O V E N[/woven.accent]", justify="center")
+
+
 def render_header(console: Console, *, response_text: str) -> None:
     console.print(
         Panel(
-            f"[bold cyan]Woven[/bold cyan] [dim]v{__version__}[/dim] · chat\n"
-            f"[dim]workspace:[/dim] {Path.cwd()}  "
-            f"[dim](current directory — Woven has no project/workspace "
-            f"concept yet)[/dim]\n"
-            f"[yellow]demo model:[/yellow] FakeModel — every message gets "
-            f'this same fixed reply: "{response_text}"',
+            f"[woven.accent]Woven[/woven.accent] [woven.dim]v{__version__}[/woven.dim] · chat\n"
+            f"[woven.dim]workspace:[/woven.dim] {Path.cwd()}  "
+            f"[woven.dim](current directory — Woven has no project/workspace "
+            f"concept yet)[/woven.dim]\n"
+            f"[woven.warning]demo model:[/woven.warning] FakeModel — every "
+            f'message gets this same fixed reply: "{response_text}"',
             box=box.ROUNDED,
-            border_style="cyan",
+            border_style="woven.accent",
             title="woven chat",
             title_align="left",
         )
     )
 
 
+def render_hint(console: Console) -> None:
+    console.print("[woven.dim]Type exit, quit, or :q to leave.[/woven.dim]")
+
+
 def render_error(console: Console, message: str) -> None:
     console.print(
         Panel(
-            f"[bold red]{message}[/bold red]",
+            f"[woven.error]{message}[/woven.error]",
             box=box.ROUNDED,
-            border_style="red",
+            border_style="woven.error",
             title="error",
             title_align="left",
         )
@@ -59,11 +67,15 @@ def _render_turn_started(event: TurnStarted, console: Console) -> None:
 
 
 def _render_model_started(event: ModelStarted, console: Console) -> None:
-    console.print("  [cyan]◌[/cyan] [dim]Calling model…[/dim]")
+    console.print(
+        "  [woven.accent]◌[/woven.accent] [woven.dim]Calling model…[/woven.dim]"
+    )
 
 
 def _render_model_completed(event: ModelCompleted, console: Console) -> None:
-    console.print("  [green]✓[/green] [dim]Model responded[/dim]")
+    console.print(
+        "  [woven.success]✓[/woven.success] [woven.dim]Model responded[/woven.dim]"
+    )
 
 
 def _render_turn_completed(event: TurnCompleted, console: Console) -> None:
@@ -71,9 +83,9 @@ def _render_turn_completed(event: TurnCompleted, console: Console) -> None:
         Panel(
             Markdown(event.output_text),
             box=box.ROUNDED,
-            title="[bold green]woven[/bold green]",
+            title="[woven.success]woven[/woven.success]",
             title_align="left",
-            border_style="green",
+            border_style="woven.success",
         )
     )
 
@@ -87,7 +99,7 @@ def _render_run_failed(event: RunFailed, console: Console) -> None:
 
 
 def _render_unknown(event: Event, console: Console) -> None:
-    console.print(f"  [dim]· {type(event).__name__}[/dim]")
+    console.print(f"  [woven.dim]· {type(event).__name__}[/woven.dim]")
 
 
 _RENDERERS: dict[type[Event], Callable[[Event, Console], None]] = {

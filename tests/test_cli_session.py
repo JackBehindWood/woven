@@ -2,6 +2,7 @@ import io
 
 from rich.console import Console
 
+from woven.client.cli.console import make_console
 from woven.client.cli.session import run_chat_turn
 from woven.models import FakeModel
 from woven.runtime import AgentRun, AgentRuntime
@@ -9,7 +10,7 @@ from woven.runtime import AgentRun, AgentRuntime
 
 def _capturing_console() -> tuple[Console, io.StringIO]:
     buffer = io.StringIO()
-    return Console(file=buffer, width=100, no_color=True), buffer
+    return make_console(file=buffer, width=100, no_color=True), buffer
 
 
 def test_run_chat_turn_success_renders_response_and_returns_turn():

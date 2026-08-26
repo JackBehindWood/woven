@@ -66,6 +66,10 @@ Because every current runtime operation is synchronous and returns in microsecon
 
 A dim `console.rule()` is printed between turns in the REPL loop for visual separation, independent of the event dispatch itself.
 
+## Startup chrome
+
+`_run_chat()` (`src/woven/client/cli/app.py`) runs a fixed sequence before entering the REPL loop, independent of event rendering: clear the screen (`console.clear()`) → set the terminal window title to "Woven" (`console.set_window_title`) → print a centered wordmark (`render_banner`) → print the header panel (`render_header`) → print a one-line exit-instructions hint (`render_hint`). `render_banner` and `render_hint` live in `render.py` alongside `render_header`, following the same plain-function-plus-theme-markup shape. None of this touches the event dispatch table or `run_chat_turn`.
+
 ## Error handling
 
 - **`ModelError`** — caught in `run_chat_turn`, rendered from `run.events[-1]` (the `RunFailed` event recorded before the exception was re-raised), `run_chat_turn` returns `None`, and the REPL continues — one bad turn doesn't kill the session.
@@ -84,6 +88,10 @@ No real `Model` implementation exists yet — CLAUDE.md's constraints explicitly
 | Event → Rich rendering | Implemented (7 known event types + fallback) |
 | `--response`/`-r` flag | Implemented |
 | Clean exit (`exit`/`quit`/`:q`, Ctrl+C, Ctrl+D) | Implemented |
+| Window title (`set_window_title`) | Implemented |
+| Startup wordmark/banner | Implemented |
+| Screen clear on launch | Implemented |
+| Hint footer (exit instructions) | Implemented |
 | `--mode` flag | Not implemented — `BUILTIN_MODES` has exactly one entry today |
 | `--verbose` flag (reveal `RunStarted`/`TurnStarted`/`RunCompleted`) | Not implemented — no current demand |
 | Live/streaming event rendering | Not implemented — blocked on the `run_turn` `EventSink`-injection gap above |

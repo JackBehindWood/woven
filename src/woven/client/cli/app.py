@@ -3,9 +3,9 @@ from __future__ import annotations
 import uuid
 
 import typer
-from rich.console import Console
 
-from woven.client.cli.render import render_header
+from woven.client.cli.console import make_console
+from woven.client.cli.render import render_banner, render_header, render_hint
 from woven.client.cli.session import run_chat_turn
 from woven.models import FakeModel
 from woven.runtime import AgentRun, AgentRuntime
@@ -46,8 +46,12 @@ def chat(
 
 
 def _run_chat(response: str) -> None:
-    console = Console()
+    console = make_console()
+    console.set_window_title("Woven")
+    console.clear()
+    render_banner(console)
     render_header(console, response_text=response)
+    render_hint(console)
 
     runtime = AgentRuntime()
     run = AgentRun(run_id=uuid.uuid4().hex)
@@ -55,17 +59,17 @@ def _run_chat(response: str) -> None:
 
     while True:
         try:
-            user_input = console.input("[bold cyan]you[/bold cyan] › ")
+            user_input = console.input("[woven.accent]you[/woven.accent] › ")
         except (EOFError, KeyboardInterrupt):
-            console.print("\n[dim]Goodbye.[/dim]")
+            console.print("\n[woven.dim]Goodbye.[/woven.dim]")
             raise typer.Exit(code=0) from None
 
         stripped = user_input.strip()
         if not stripped:
             continue
         if stripped.lower() in _EXIT_WORDS:
-            console.print("[dim]Goodbye.[/dim]")
+            console.print("[woven.dim]Goodbye.[/woven.dim]")
             raise typer.Exit(code=0)
 
         run_chat_turn(runtime, run, "chat", user_input, model, console)
-        console.rule(style="dim")
+        console.rule(style="woven.dim")

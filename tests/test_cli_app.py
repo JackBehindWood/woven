@@ -42,3 +42,11 @@ def test_bare_invocation_starts_chat_directly():
     assert result.exit_code == 0
     assert "Goodbye" in result.stdout
     assert "demo model" in result.stdout.lower()
+
+
+def test_chat_session_shows_banner_and_hint():
+    result = runner.invoke(app, ["chat"], input="\n")
+
+    assert "W O V E N" in result.stdout
+    assert "exit" in result.stdout
+    assert ":q" in result.stdout
