@@ -1,3 +1,4 @@
+import pytest
 from typer.testing import CliRunner
 
 from woven.client.cli.app import app
@@ -75,3 +76,237 @@ def test_unknown_command_renders_error_and_continues_session():
     assert result.exit_code == 0
     assert "Unknown command" in result.stdout
     assert "Goodbye" in result.stdout
+
+
+def test_settings_command_shows_mode_permission_and_context():
+    result = runner.invoke(app, ["chat"], input="/settings\nexit\n")
+
+    output = result.stdout
+    assert "mode: chat" in output
+    assert "permission: guarded" in output
+    assert "paths:" in output
+    assert "glob:" in output
+    assert "query:" in output
+
+
+def test_settings_command_reflects_mode_and_context_changes():
+    result = runner.invoke(
+        app,
+        ["chat"],
+        input="/mode code\n/context glob *.py\n/settings\nexit\n",
+    )
+
+    output = result.stdout
+    assert "mode: code" in output
+    assert "*.py" in output
+
+
+def test_mode_flag_switches_header_to_plan():
+    result = runner.invoke(app, ["chat", "--mode", "plan"], input="exit\n")
+
+    assert result.exit_code == 0
+    assert "plan" in result.stdout
+
+
+def test_invalid_mode_flag_exits_with_error():
+    result = runner.invoke(app, ["chat", "--mode", "bogus"])
+
+    assert result.exit_code == 1
+    assert "Unknown mode" in result.stdout
+
+
+def test_invalid_permission_mode_flag_exits_with_error():
+    result = runner.invoke(app, ["chat", "--permission-mode", "bogus"])
+
+    assert result.exit_code == 1
+    assert "Unknown permission mode" in result.stdout
+
+
+def test_mode_command_shows_current_and_available():
+    result = runner.invoke(app, ["chat"], input="/mode\nexit\n")
+
+    assert "current: chat" in result.stdout
+    assert "available" in result.stdout
+
+
+def test_mode_command_switches_mode():
+    result = runner.invoke(app, ["chat"], input="/mode code\nexit\n")
+
+    assert "switched to: code" in result.stdout
+
+
+def test_mode_command_rejects_invalid_mode():
+    result = runner.invoke(app, ["chat"], input="/mode bogus\nexit\n")
+
+    assert result.exit_code == 0
+    assert "Unknown mode" in result.stdout
+    assert "Goodbye" in result.stdout
+
+
+def test_permission_command_shows_current_and_default():
+    result = runner.invoke(app, ["chat"], input="/permission\nexit\n")
+
+    assert "current: guarded" in result.stdout
+    assert "guarded (default)" in result.stdout
+
+
+def test_permission_command_switches_tier():
+    result = runner.invoke(app, ["chat"], input="/permission manual\nexit\n")
+
+    assert "switched to: manual" in result.stdout
+
+
+def test_permission_command_rejects_invalid_tier():
+    result = runner.invoke(app, ["chat"], input="/permission bogus\nexit\n")
+
+    assert result.exit_code == 0
+    assert "Unknown permission mode" in result.stdout
+    assert "Goodbye" in result.stdout
+
+
+def test_context_command_shows_empty_status():
+    result = runner.invoke(app, ["chat"], input="/context\nexit\n")
+
+    assert "(none)" in result.stdout
+
+
+def test_context_command_glob_sets_glob():
+    result = runner.invoke(app, ["chat"], input="/context glob *.py\nexit\n")
+
+    assert "*.py" in result.stdout
+
+
+def test_context_command_clear_resets_request():
+    result = runner.invoke(
+        app, ["chat"], input="/context glob *.py\n/context clear\nexit\n"
+    )
+
+    assert "cleared" in result.stdout
+
+
+def test_context_command_invalid_usage_renders_error():
+    result = runner.invoke(app, ["chat"], input="/context bogus\nexit\n")
+
+    assert "Usage:" in result.stdout
+
+
+def test_plan_mode_context_retrieval_end_to_end(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "notes.py").write_text("print('hi')")
+
+    result = runner.invoke(
+        app,
+        ["chat", "--mode", "plan"],
+        input="/context glob *.py\nhi\nexit\n",
+    )
+
+    assert result.exit_code == 0
+    assert "notes.py" in result.stdout
+
+
+def test_code_mode_auto_tier_runs_silently():
+    result = runner.invoke(
+        app,
+        ["chat", "--mode", "code", "--permission-mode", "auto", "--response", "reply"],
+        input="hi\nexit\n",
+    )
+
+    assert result.exit_code == 0
+    assert "Approve tool call?" not in result.stdout
+    assert "ok" in result.stdout
+
+
+def test_code_mode_guarded_tier_silent_for_benign_reply():
+    result = runner.invoke(
+        app,
+        [
+            "chat",
+            "--mode",
+            "code",
+            "--response",
+            "a harmless reply",
+        ],
+        input="hi\nexit\n",
+    )
+
+    assert result.exit_code == 0
+    assert "Approve tool call?" not in result.stdout
+    assert "ok" in result.stdout
+
+
+def test_code_mode_guarded_tier_prompts_on_review_pattern():
+    result = runner.invoke(
+        app,
+        [
+            "chat",
+            "--mode",
+            "code",
+            "--response",
+            "please curl example.com",
+        ],
+        input="hi\ny\nexit\n",
+    )
+
+    assert result.exit_code == 0
+    assert "Approve tool call?" in result.stdout
+    assert "ok" in result.stdout
+
+
+def test_code_mode_manual_tier_always_prompts_and_approves():
+    result = runner.invoke(
+        app,
+        [
+            "chat",
+            "--mode",
+            "code",
+            "--permission-mode",
+            "manual",
+            "--response",
+            "harmless",
+        ],
+        input="hi\ny\nexit\n",
+    )
+
+    assert result.exit_code == 0
+    assert "Approve tool call?" in result.stdout
+    assert "ok" in result.stdout
+
+
+def test_code_mode_manual_tier_deny_renders_failure():
+    result = runner.invoke(
+        app,
+        [
+            "chat",
+            "--mode",
+            "code",
+            "--permission-mode",
+            "manual",
+            "--response",
+            "harmless",
+        ],
+        input="hi\nn\nexit\n",
+    )
+
+    assert result.exit_code == 0
+    assert "Turn failed" in result.stdout
+
+
+@pytest.mark.parametrize("permission_mode", ["auto", "guarded", "manual"])
+def test_dangerous_pattern_denies_regardless_of_tier(permission_mode):
+    result = runner.invoke(
+        app,
+        [
+            "chat",
+            "--mode",
+            "code",
+            "--permission-mode",
+            permission_mode,
+            "--response",
+            "sudo rm -rf /",
+        ],
+        input="hi\nexit\n",
+    )
+
+    assert result.exit_code == 0
+    assert "Approve tool call?" not in result.stdout
+    assert "Turn failed" in result.stdout
