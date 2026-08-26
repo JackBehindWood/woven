@@ -3,6 +3,7 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict
 
 from woven.models import ModelRequest, ModelResponse
+from woven.tools import ToolRequest, ToolResult
 
 
 class Event(BaseModel):
@@ -25,6 +26,14 @@ class ModelStarted(Event):
 
 class ModelCompleted(Event):
     response: ModelResponse
+
+
+class ToolCallStarted(Event):
+    request: ToolRequest
+
+
+class ToolCallCompleted(Event):
+    result: ToolResult
 
 
 class TurnCompleted(Event):

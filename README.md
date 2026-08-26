@@ -38,7 +38,7 @@ This diagram represents an intended direction, not a fully implemented system. T
 
 Woven has a first deterministic Agent Runtime vertical slice (`src/woven/`): an `AgentRuntime` executes a `Turn` through a `Mode`/`Workflow` that invokes a model step against a `FakeModel`, producing a deterministic event stream, covered by tests. See `docs/architecture/agent-runtime.md` for the current design.
 
-A first CLI client (`woven chat`, under `src/woven/client/cli/`) now demonstrates driving the runtime from outside its own test suite — see `docs/architecture/cli-client.md`. It still runs against `FakeModel` only. No local inference, memory system, tools, or MCP integration are implemented yet.
+A first CLI client (`woven chat`, under `src/woven/client/cli/`) now demonstrates driving the runtime from outside its own test suite — see `docs/architecture/cli-client.md`. It still runs against `FakeModel` only. A `Tool` protocol, `tool_node`, and deterministic `MockTools` exist (see `docs/architecture/agent-runtime.md`'s Tools section) but aren't wired into any Mode yet. No local inference, memory system, context retrieval, or MCP integration are implemented yet.
 
 ## Development philosophy
 
@@ -80,7 +80,7 @@ Please see CONTRIBUTING.md for how to contribute. In short: open a small, focuse
 
 1. ~~Repository and development foundation.~~
 2. ~~Deterministic Agent Runtime vertical slice (core abstractions, FakeModel for tests).~~ Done — see `docs/architecture/agent-runtime.md`.
-3. Tools and context retrieval.
+3. ~~Tools.~~ Protocol/`tool_node`/`MockTools` done, not wired into a Mode yet — see `docs/architecture/agent-runtime.md`. Context retrieval still pending.
 4. Code-focused workflows and modes.
 5. Projects/workspaces and persistence.
 6. Real model provider adapters and optional local inference.
