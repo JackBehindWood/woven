@@ -70,6 +70,17 @@ A dim `console.rule()` is printed between turns in the REPL loop for visual sepa
 
 `_run_chat()` (`src/woven/client/cli/app.py`) runs a fixed sequence before entering the REPL loop, independent of event rendering: clear the screen (`console.clear()`) → set the terminal window title to "Woven" (`console.set_window_title`) → print a centered wordmark (`render_banner`) → print the header panel (`render_header`) → print a one-line exit-instructions hint (`render_hint`). `render_banner` and `render_hint` live in `render.py` alongside `render_header`, following the same plain-function-plus-theme-markup shape. None of this touches the event dispatch table or `run_chat_turn`.
 
+## REPL commands
+
+Beyond the bare exit words (`exit`/`quit`/`:q`), any REPL input starting with `/` is looked up in `app.py`'s `_COMMANDS` table — `dict[str, tuple[str, Callable[[Console, str], None]]]` mapping a command name to its `/help` description and its handler. Adding a new command is one dict entry; no change to the REPL loop itself is needed. Today's commands:
+
+| Command | Effect |
+|---|---|
+| `/help` | Renders a panel listing every registered command plus the exit words, via `render_help()` (`render.py`) |
+| `/clear` | Clears the screen and redraws the startup chrome (`render_banner` → `render_header` → `render_hint`) so context isn't just wiped |
+
+An unrecognized `/foo` renders an error via the existing `render_error()` and the REPL continues — same "never crashes the session" posture as `run_chat_turn`'s error handling below. `render_hint()`'s text points at `/help` so the command set is discoverable without reading docs.
+
 ## Error handling
 
 - **`ModelError`** — caught in `run_chat_turn`, rendered from `run.events[-1]` (the `RunFailed` event recorded before the exception was re-raised), `run_chat_turn` returns `None`, and the REPL continues — one bad turn doesn't kill the session.
@@ -92,6 +103,7 @@ No real `Model` implementation exists yet — CLAUDE.md's constraints explicitly
 | Startup wordmark/banner | Implemented |
 | Screen clear on launch | Implemented |
 | Hint footer (exit instructions) | Implemented |
+| REPL commands (`/help`, `/clear`) | Implemented — extensible dispatch table, one entry per command |
 | `--mode` flag | Not implemented — `BUILTIN_MODES` has exactly one entry today |
 | `--verbose` flag (reveal `RunStarted`/`TurnStarted`/`RunCompleted`) | Not implemented — no current demand |
 | Live/streaming event rendering | Not implemented — blocked on the `run_turn` `EventSink`-injection gap above |

@@ -50,3 +50,28 @@ def test_chat_session_shows_banner_and_hint():
     assert "W O V E N" in result.stdout
     assert "exit" in result.stdout
     assert ":q" in result.stdout
+    assert "/help" in result.stdout
+
+
+def test_help_command_lists_commands():
+    result = runner.invoke(app, ["chat"], input="/help\nexit\n")
+
+    assert result.exit_code == 0
+    assert "commands" in result.stdout.lower()
+    assert "/clear" in result.stdout
+    assert "Leave the session" in result.stdout
+
+
+def test_clear_command_redraws_banner():
+    result = runner.invoke(app, ["chat"], input="/clear\nexit\n")
+
+    assert result.exit_code == 0
+    assert result.stdout.count("W O V E N") >= 2
+
+
+def test_unknown_command_renders_error_and_continues_session():
+    result = runner.invoke(app, ["chat"], input="/nope\nexit\n")
+
+    assert result.exit_code == 0
+    assert "Unknown command" in result.stdout
+    assert "Goodbye" in result.stdout

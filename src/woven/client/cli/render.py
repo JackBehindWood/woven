@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 
 from rich import box
@@ -43,7 +43,9 @@ def render_header(console: Console, *, response_text: str) -> None:
 
 
 def render_hint(console: Console) -> None:
-    console.print("[woven.dim]Type exit, quit, or :q to leave.[/woven.dim]")
+    console.print(
+        "[woven.dim]Type exit, quit, or :q to leave. Type /help for more commands.[/woven.dim]"
+    )
 
 
 def render_error(console: Console, message: str) -> None:
@@ -53,6 +55,27 @@ def render_error(console: Console, message: str) -> None:
             box=box.ROUNDED,
             border_style="woven.error",
             title="error",
+            title_align="left",
+        )
+    )
+
+
+def render_help(
+    console: Console, commands: dict[str, str], exit_words: Iterable[str]
+) -> None:
+    lines = [
+        f"[woven.accent]{name}[/woven.accent]  {description}"
+        for name, description in commands.items()
+    ]
+    lines.append(
+        f"[woven.accent]{', '.join(exit_words)}[/woven.accent]  Leave the session"
+    )
+    console.print(
+        Panel(
+            "\n".join(lines),
+            box=box.ROUNDED,
+            border_style="woven.accent",
+            title="commands",
             title_align="left",
         )
     )
