@@ -90,15 +90,11 @@ def _render_turn_started(event: TurnStarted, console: Console) -> None:
 
 
 def _render_model_started(event: ModelStarted, console: Console) -> None:
-    console.print(
-        "  [woven.accent]◌[/woven.accent] [woven.dim]Calling model…[/woven.dim]"
-    )
+    return
 
 
 def _render_model_completed(event: ModelCompleted, console: Console) -> None:
-    console.print(
-        "  [woven.success]✓[/woven.success] [woven.dim]Model responded[/woven.dim]"
-    )
+    return
 
 
 def _render_turn_completed(event: TurnCompleted, console: Console) -> None:

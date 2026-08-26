@@ -41,7 +41,9 @@ def run_chat_turn(
 ) -> Turn | None: ...
 ```
 
-(`src/woven/client/cli/session.py`). This is the whole client boundary. A future non-CLI Python client could reuse the same pattern — construct one `AgentRuntime` + one `AgentRun`, call `run_turn` per turn, render `turn.events` — without needing this exact function.
+(`src/woven/client/cli/session.py`). This is the whole client boundary. `run_chat_turn` itself is CLI-specific glue, not a reusable core: it takes a Rich `Console` and calls `render_event`/`render_error` directly from inside its `try`/`except` branches, so a non-Rich caller can't use this function as-is. A future non-CLI Python client could still reuse the *pattern* it demonstrates — construct one `AgentRuntime` + one `AgentRun`, call `run_turn` per turn, render `turn.events` in whatever way fits that client — without needing this exact function.
+
+**Considered and deferred:** splitting `src/woven/client/` so a Rich-free "core" (call `run_turn`, catch its two failure modes, hand back events/errors for the caller to render) lives directly under `src/woven/client/`, separate from the Rich/Typer-specific presentation code in `cli/`. Rejected for now, for the same reason as "Why not a class" above: there is no second client today (Slice 9, "Additional clients," isn't scheduled), so the split has no consumer to validate its shape against and would be speculative. Revisit when Slice 9 actually starts.
 
 ### The event-injection gap
 
@@ -57,14 +59,20 @@ Because every current runtime operation is synchronous and returns in microsecon
 |---|---|---|
 | `RunStarted` | suppressed | fires per `run_turn` call, not once per session (see `agent-runtime.md`'s "Known simplification") — showing it every REPL message would look broken |
 | `TurnStarted` | suppressed | same reason |
-| `ModelStarted` | shown | dim `◌ Calling model…` activity line |
-| `ModelCompleted` | shown | dim `✓ Model responded` activity line |
+| `ModelStarted` | suppressed | the model-call spinner (below) now covers this moment |
+| `ModelCompleted` | suppressed | same reason |
 | `TurnCompleted` | shown | green-bordered panel, body rendered via Rich `Markdown` (gives Markdown formatting and syntax-highlighted fenced code blocks for free) |
 | `RunCompleted` | suppressed | same reason as `RunStarted` |
 | `RunFailed` | shown | red-bordered error panel |
 | unknown/future | shown | plain dim `· <TypeName>` fallback — never crashes, never silently vanishes |
 
 A dim `console.rule()` is printed between turns in the REPL loop for visual separation, independent of the event dispatch itself.
+
+### Model-call spinner
+
+`run_chat_turn` (`session.py`) wraps the `runtime.run_turn(...)` call itself in `console.status("Calling model…", spinner="dots")` — not the event dispatch table. This replaces the old static `ModelStarted`/`ModelCompleted` indicator lines (now suppressed, like `RunStarted`) with a real spinner that spans the actual call.
+
+This does **not** close the event-injection gap above: `run_turn` is still called synchronously and its events still only exist for post-hoc replay after it returns — the spinner just wraps that one (currently near-instant) call, it isn't driven by live `ModelStarted`/`ModelCompleted` signals. It will show real, visible duration once a real model provider exists; today it's a cosmetic improvement over the two-line indicator.
 
 ## Startup chrome
 
@@ -104,6 +112,7 @@ No real `Model` implementation exists yet — CLAUDE.md's constraints explicitly
 | Screen clear on launch | Implemented |
 | Hint footer (exit instructions) | Implemented |
 | REPL commands (`/help`, `/clear`) | Implemented — extensible dispatch table, one entry per command |
+| Model-call status spinner | Implemented — wraps `runtime.run_turn` in `session.py`, not event-driven |
 | `--mode` flag | Not implemented — `BUILTIN_MODES` has exactly one entry today |
 | `--verbose` flag (reveal `RunStarted`/`TurnStarted`/`RunCompleted`) | Not implemented — no current demand |
 | Live/streaming event rendering | Not implemented — blocked on the `run_turn` `EventSink`-injection gap above |

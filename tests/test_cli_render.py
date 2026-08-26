@@ -59,7 +59,7 @@ def test_run_failed_renders_error_message():
     assert "boom" in output
 
 
-def test_model_started_and_completed_render_indicator_lines():
+def test_model_started_and_completed_are_suppressed():
     console, buffer = _capturing_console()
 
     render_event(
@@ -72,9 +72,7 @@ def test_model_started_and_completed_render_indicator_lines():
         ModelCompleted(turn_id="t1", response=ModelResponse(text="hello")), console
     )
 
-    output = buffer.getvalue()
-    assert "Calling model" in output
-    assert "Model responded" in output
+    assert buffer.getvalue() == ""
 
 
 def test_run_started_turn_started_run_completed_are_suppressed():

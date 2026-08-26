@@ -1,4 +1,5 @@
 import io
+from unittest.mock import MagicMock
 
 from rich.console import Console
 
@@ -11,6 +12,18 @@ from woven.runtime import AgentRun, AgentRuntime
 def _capturing_console() -> tuple[Console, io.StringIO]:
     buffer = io.StringIO()
     return make_console(file=buffer, width=100, no_color=True), buffer
+
+
+def test_run_chat_turn_shows_status_spinner_around_model_call():
+    console, _ = _capturing_console()
+    console.status = MagicMock(wraps=console.status)
+    runtime = AgentRuntime()
+    run = AgentRun(run_id="r1")
+
+    run_chat_turn(runtime, run, "chat", "hi", FakeModel(response_text="hello"), console)
+
+    console.status.assert_called_once()
+    assert "Calling model" in console.status.call_args[0][0]
 
 
 def test_run_chat_turn_success_renders_response_and_returns_turn():

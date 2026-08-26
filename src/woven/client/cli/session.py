@@ -21,7 +21,8 @@ def run_chat_turn(
     error has already been printed to `console` in that case).
     """
     try:
-        turn = runtime.run_turn(run, mode_name, input_text, model)
+        with console.status("Calling model…", spinner="dots"):
+            turn = runtime.run_turn(run, mode_name, input_text, model)
     except ModelError:
         render_event(run.events[-1], console)
         return None
