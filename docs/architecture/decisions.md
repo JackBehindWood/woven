@@ -33,7 +33,7 @@ The `CLAUDE.md` edit was reverted back to "Graphiti." If Graphify is initialized
 
 Two independent, non-overlapping mechanisms:
 - **Claude Code hook** (`.claude/settings.json`, untracked/local): a `PostToolUse` hook on `Write|Edit` that runs `uv run ruff check --fix` and `uv run ruff format` on the specific Python file just written, automatically, inside Claude Code sessions only.
-- **git pre-commit hook** (`.pre-commit-config.yaml`, tracked; `pre-commit` added to `[project.optional-dependencies].dev`): runs `uv run ruff check` and `uv run ruff format --check` on staged Python files before every commit, for every contributor who runs `uv run pre-commit install` once after cloning. Unlike the Claude Code hook, this one *blocks* the commit on failure rather than auto-fixing, since git hooks running on someone else's uncommitted work should not silently rewrite it.
+- **git pre-commit hook** (`.pre-commit-config.yaml`, tracked): runs `uv run ruff check` and `uv run ruff format --check` on staged Python files before every commit, for every contributor who runs `uv tool install pre-commit && pre-commit install` once after cloning. `pre-commit` itself is installed as an isolated `uv tool`, not a project dependency (see the 2026-08-26 entry below) — the hooks are `language: system`, so they only need `uv`/`ruff` on `PATH`, not `pre-commit` inside the project's `.venv`. Unlike the Claude Code hook, this one *blocks* the commit on failure rather than auto-fixing, since git hooks running on someone else's uncommitted work should not silently rewrite it.
 
 ## Pre-existing `pyproject.toml` bug fixed in passing
 
@@ -52,3 +52,12 @@ While planning Slice 3 (Tools), the current architecture (`AgentRuntime`, `Agent
 **CLI client/runtime boundary.** `run_chat_turn` assumes one `AgentRuntime` + one `AgentRun` per call, rendered synchronously after `run_turn` returns. Nothing prevents constructing multiple `AgentRun`s today, but a client driving several concurrent agents would want interleaved/live rendering across them — which runs into the same "event-injection gap" `cli-client.md` already documents (no live `EventSink` parameter on `run_turn`), just now motivated by concurrency instead of duration.
 
 **Bottom line:** Slice 3's concrete `Tool`/`tool_node`/`MockTools` design has no tension with any of the above — none of these seams are made bigger or smaller by adding a second node kind. The two real gaps (single-agent-scoped `Event`/`AgentRun`, and the tool-as-agent equivalence) already exist independent of Tools; nothing here changes what Slice 3 built.
+
+## 2026-08-26 — Editable-install/venv flakiness: actual fix, not just a workaround
+
+The "known issue" documented in README (stray `.pth`-ordering bug, `ModuleNotFoundError: No module named 'woven'`) was suspected to stem from `virtualenv` — a real transitive dependency of `pre-commit` — being installed into the *same* `.venv` as `woven`'s own editable install, since `pre-commit` lived in `[project.optional-dependencies].dev`. Rather than only documenting a recovery command, the actual trigger for that coexistence is removed:
+
+- `uv` upgraded 0.10.8 → 0.12.6 (Homebrew).
+- `pre-commit` moved out of `dev` and installed instead via `uv tool install pre-commit` — an isolated tool venv, like `pipx`. It never shares `.venv` with `woven` again, so `virtualenv` can't land there either. The pre-commit hooks themselves are unaffected (`.pre-commit-config.yaml`'s hooks are `language: system`, calling `uv run ruff ...` directly — they never needed `pre-commit` itself inside the project's venv).
+
+This is a structural fix (the two packages/tools no longer share an environment at all) rather than a version pin aimed at a specific guessed mechanism. `.python-version` + `python-preference = "managed"` (added previously) stay in place as additional belt-and-braces. `rm -rf .venv && uv sync --all-extras` remains the documented fallback in README if `ModuleNotFoundError` ever recurs regardless.
