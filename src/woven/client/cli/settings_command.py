@@ -41,7 +41,14 @@ def _validate_permission_mode(value: str) -> str | None:
     return None
 
 
-def _no_validation(value: str) -> str | None:
+def _validate_model_provider(value: str) -> str | None:
+    from woven.models import MODEL_PROVIDERS
+
+    if value not in MODEL_PROVIDERS:
+        return (
+            f"Unknown model provider: {value}. "
+            f"Available: {', '.join(sorted(MODEL_PROVIDERS))}"
+        )
     return None
 
 
@@ -49,7 +56,7 @@ def _no_validation(value: str) -> str | None:
 _FIELDS: dict[str, tuple[str, Callable[[str], str | None]]] = {
     "mode": ("default_mode", _validate_mode),
     "permission-mode": ("default_permission_mode", _validate_permission_mode),
-    "model-provider": ("default_model_provider", _no_validation),
+    "model-provider": ("default_model_provider", _validate_model_provider),
 }
 
 # cli field name -> secret key in the SecretStore, one per known provider.

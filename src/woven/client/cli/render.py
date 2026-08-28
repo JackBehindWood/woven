@@ -40,17 +40,24 @@ def render_banner(console: Console) -> None:
 
 
 def render_header(
-    console: Console, *, response_text: str, mode_name: str = "chat"
+    console: Console,
+    *,
+    response_text: str,
+    mode_name: str = "chat",
+    model_description: str | None = None,
 ) -> None:
     workspace_line = (
         f"[woven.dim]workspace:[/woven.dim] {Path.cwd()}  "
         f"[woven.dim](current directory — Woven has no project/workspace "
         f"concept yet)[/woven.dim]"
     )
-    model_line = (
-        f"[woven.warning]demo model:[/woven.warning] FakeModel — every "
-        f'message gets this same fixed reply: "{response_text}"'
-    )
+    if model_description is not None:
+        model_line = f"[woven.accent]model:[/woven.accent] {model_description}"
+    else:
+        model_line = (
+            f"[woven.warning]demo model:[/woven.warning] FakeModel — every "
+            f'message gets this same fixed reply: "{response_text}"'
+        )
     lines = [
         f"[woven.accent]Woven[/woven.accent] [woven.dim]v{__version__}[/woven.dim]",
         workspace_line,

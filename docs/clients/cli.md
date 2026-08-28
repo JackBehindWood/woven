@@ -148,9 +148,11 @@ Three selectable tool-approval tiers, chosen via `--permission-mode` at startup 
 
 `guarded` becoming the default is a deliberate behavior change from this CLI's original fully-silent approval — `code` mode sessions now pause for confirmation on `DEFAULT_REVIEW_PATTERNS` matches unless `--permission-mode auto` is passed explicitly. The startup header does **not** disclose the active permission mode (unlike the demo-model/demo-tool lines below) — `/permission` with no argument is the way to check it, kept as an explicit non-build to avoid a header that's already three-to-four lines long growing a fifth.
 
-## The demo-model and demo-tool disclosures
+## The demo-model and demo-tool disclosures, and `--model`
 
-No real `Model` implementation exists yet — CLAUDE.md's constraints explicitly forbid adding a model provider in this slice. `woven chat` runs against `FakeModel` exclusively, with `--response`/`-r` controlling its one fixed reply. The startup header states this directly (`demo model: FakeModel — every message gets this same fixed reply: "..."`) so the CLI never implies it's a real assistant.
+`woven chat` runs against `FakeModel` by default — no `--model` flag, no persisted `default_model_provider` — with `--response`/`-r` controlling its one fixed reply. The startup header states this directly (`demo model: FakeModel — every message gets this same fixed reply: "..."`) so the CLI never implies it's a real assistant when it isn't one.
+
+A real provider is opt-in via `--model <provider>` (e.g. `--model gemini`), mirroring `--mode`/`--permission-mode`'s CLI-flag → persisted-default → hardcoded-default resolution through `resolve_runtime_config`. `_run_chat` looks the provider name up in `MODEL_PROVIDERS` (`src/woven/models/providers/__init__.py`); an unknown provider or a missing API key (`resolve_api_key`, `FileSecretStore`) renders a clear error and exits 1 before any SDK call is attempted — no stack trace either way. When a real provider is active, the header's model line switches from the `demo model: FakeModel` disclosure to `model: <provider> (<model_id>)` (`render_header`'s `model_description` param) — this also holds across `/clear` mid-session, via `SessionState.model_description`.
 
 `code` mode additionally wires in `MockTools()` — also permanent test infrastructure, repurposed here as a demo tool — as the single `Tool` every tool call in that mode goes through; it always returns the same fixed `"ok"` result regardless of what it's asked to do. `render_header`'s `mode_name` param controls this: when `mode_name == "code"`, the header panel gains a fourth line (`demo tool: MockTools — tool calls always return a fixed result ("ok")`), mirroring the demo-model line's disclosure pattern exactly. `chat` and `plan` mode headers are unaffected since neither mode wires in a `tool`.
 
@@ -170,6 +172,7 @@ No real `Model` implementation exists yet — CLAUDE.md's constraints explicitly
 | REPL commands (`/help`, `/clear`, `/settings`, `/mode`, `/permission`, `/context`) | Implemented — extensible dispatch table, one entry per command |
 | Model-call status spinner | Implemented — wraps `runtime.run_turn` in `session.py`, not event-driven |
 | `--mode` / `/mode` (chat, plan, code) | Implemented — `BUILTIN_MODES` now has three entries, all reachable from the CLI |
+| `--model` (real provider selection, e.g. `gemini`) | Implemented — session-start flag only, no `/model` REPL command (see `docs/architecture/agent-runtime.md`'s GeminiProvider section) |
 | Real (non-mock) context retrieval in the CLI | Implemented — `FilesystemContext(root=Path.cwd())`, driven by `/context` |
 | Demo tool disclosure + tool-call rendering | Implemented — `MockTools()` in `code` mode |
 | Interactive tool-call approval | Implemented — `InteractiveApprovalPolicy`, three selectable tiers (see "Permission modes" above) |

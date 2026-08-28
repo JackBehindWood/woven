@@ -84,6 +84,26 @@ def test_settings_set_invalid_permission_mode_exits_1_and_leaves_file_unchanged(
     assert config_path().read_text() == before
 
 
+def test_settings_set_model_provider_gemini_succeeds():
+    result = runner.invoke(app, ["settings", "set", "model-provider", "gemini"])
+
+    assert result.exit_code == 0
+
+    show_result = runner.invoke(app, ["settings", "show"])
+    assert "default model provider: gemini" in show_result.stdout
+
+
+def test_settings_set_model_provider_bogus_exits_1_and_leaves_file_unchanged():
+    load_config()
+    before = config_path().read_text()
+
+    result = runner.invoke(app, ["settings", "set", "model-provider", "bogus"])
+
+    assert result.exit_code == 1
+    assert "Unknown model provider" in result.stdout
+    assert config_path().read_text() == before
+
+
 def test_settings_show_under_corrupt_config_exits_1_naming_path(monkeypatch):
     load_config()
     path = config_path()

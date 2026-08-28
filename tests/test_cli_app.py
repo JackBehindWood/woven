@@ -2,6 +2,7 @@ import pytest
 from typer.testing import CliRunner
 
 from woven.client.cli.app import app
+from woven.models.providers import DEFAULT_GEMINI_MODEL_ID
 from woven.settings import (
     Config,
     FileSecretStore,
@@ -396,6 +397,40 @@ def test_permission_mode_flag_overrides_persisted_default():
 
     assert result.exit_code == 0
     assert "current: auto" in result.stdout
+
+
+def test_model_flag_with_no_api_key_configured_exits_with_error():
+    result = runner.invoke(app, ["chat", "--model", "gemini"], input="exit\n")
+
+    assert result.exit_code == 1
+    assert "No API key configured for gemini" in result.stdout
+    assert "woven settings set gemini-api-key" in result.stdout
+
+
+def test_model_flag_with_unknown_provider_exits_with_error():
+    result = runner.invoke(app, ["chat", "--model", "bogus-provider"], input="exit\n")
+
+    assert result.exit_code == 1
+    assert "Unknown model provider: bogus-provider" in result.stdout
+
+
+def test_model_flag_with_configured_key_shows_real_model_in_header():
+    FileSecretStore().set("gemini_api_key", "test-key")
+
+    result = runner.invoke(app, ["chat", "--model", "gemini"], input="exit\n")
+
+    assert f"model: gemini ({DEFAULT_GEMINI_MODEL_ID})" in result.stdout
+    assert "demo model: FakeModel" not in result.stdout
+
+
+def test_model_flag_omitted_keeps_fake_model_behavior():
+    result = runner.invoke(
+        app, ["chat", "--response", "pinned-reply"], input="hello\nexit\n"
+    )
+
+    assert result.exit_code == 0
+    assert "pinned-reply" in result.stdout
+    assert "Goodbye" in result.stdout
 
 
 def test_corrupt_config_file_exits_with_error_naming_path(monkeypatch):

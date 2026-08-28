@@ -149,6 +149,35 @@ class ModelResponse(BaseModel):
 
 `FakeModel` is permanent test infrastructure per `docs/architecture.md` and `tests/README.md` — not a throwaway mock to be deleted once a real adapter exists.
 
+## Provider protocol
+
+**Concept:** a thin, structural counterpart to `Model` that answers "which provider/model is this?" without exposing `generate()`'s mechanics — so a future router/capabilities layer (`.claude/plans/model-router.md`, `.claude/plans/model-capabilities.md`) can inspect a `Model` value's provenance without every implementation inheriting a shared base class.
+
+**Current implementation** (`src/woven/models/providers/protocol.py`):
+
+```python
+@runtime_checkable
+class Provider(Protocol):
+    provider_name: str
+    model_id: str
+```
+
+Deliberately excludes the API key — this protocol exists purely for identification, never for exposing a secret as a public, structurally-matched attribute. No hook methods, no shared HTTP-call loop: with exactly one real provider, that shared machinery has no second implementation to prove it against yet.
+
+## GeminiProvider
+
+**Current implementation** (`src/woven/models/providers/gemini.py`): the first real `Model` implementation, backed by the official `google-genai` SDK (`genai.Client`, not a hand-rolled HTTP client — the SDK absorbs Gemini API wire-protocol drift that a hand-rolled client would need to track manually).
+
+- Implements `Model` (via `generate()`) and `Provider` (via `provider_name`/`model_id`) structurally — no inheritance from either.
+- `generate()` concatenates `request.context`'s file contents (if any) with `request.input_text` into one plain string passed as the SDK's `contents` param; `request.purpose` stays unused, same as `FakeModel`.
+- `client: genai.Client | None = None` is a constructor injection point — tests substitute a small fake double shaped like `genai.Client` (a `.models.generate_content(model=, contents=)` method), never real network calls or `vcrpy` cassettes. See `tests/test_gemini_model.py`.
+- Maps `google.genai.errors.APIError` → `ModelError`, and an empty/`None` `response.text` → `ModelError`, so callers only ever see the one exception type the `Model` protocol already implies.
+- `DEFAULT_GEMINI_MODEL_ID` (`"gemini-3.7-flash"` as of 2026-08-28) is hardcoded, not a `Settings` field — Gemini's model-id strings have churned enough (confirmed via `ai.google.dev/gemini-api/docs/models`) that this is expected to need periodic updates, not a one-time choice.
+- `src/woven/models/providers/__init__.py` exports a flat `MODEL_PROVIDERS: dict[str, Callable[[str], Model]]` registry (`{"gemini": lambda api_key: GeminiProvider(api_key=api_key)}`) — mirrors `BUILTIN_MODES`'s own precedent (`src/woven/modes/core.py`): a plain dict, not a plugin/loader system, until a second real provider exists to justify one.
+- No streaming, no model-driven tool calls, no capabilities/metadata beyond `Provider`'s two fields — `Model.generate(request) -> response` is unchanged. Each of these has its own forward-looking roadmap item instead of being built now or forgotten (see `.claude/plans/roadmap.md` items 6, 8, 9, 15).
+
+Manual/live verification against the real Gemini API happens via `examples/sandbox_gemini.py` (a standalone script, not pytest-collected) — the automated suite never makes a network call, deliberately, so a stray env var or CI misconfiguration can't trigger a real, billed API call.
+
 ## Tools
 
 **Concept:**
@@ -289,6 +318,7 @@ Deterministic testing is a permanent architectural requirement: the runtime must
 | Node abstraction | Not implemented — `model_node`/`tool_node`/`context_node`/`approval_node` are all plain functions; four node kinds now exist and still share no behavior beyond the common step signature (and a small extracted `_build_tool_request` helper), so no `Node` class was extracted |
 | WorkflowState | Implemented (fields added only as each node kind needed them) |
 | Model protocol, ModelRequest/Response, FakeModel | Implemented (`ModelRequest.context` added once `context_node` existed) |
+| Provider protocol, GeminiProvider, MODEL_PROVIDERS | Implemented — Gemini only; local/server-based providers are `.claude/plans/local-inference.md` |
 | Events (12 types, callback-collected) | Implemented |
 | Errors (`ModelError`/`ToolError`/`ContextError`/`ApprovalDenied` → `RunFailed`) | Implemented |
 | Tools (`Tool` protocol, `tool_node`, `MockTools`) | Implemented — wired into `code` mode, always gated by `approval_node` |
@@ -298,5 +328,5 @@ Deterministic testing is a permanent architectural requirement: the runtime must
 | Cancellation | Not implemented (deferred — nothing blocks) |
 | Serialization / persistence | Not implemented (deferred — nothing crosses a boundary) |
 | Additional modes (Code, Plan) | Implemented — Design mode not implemented |
-| LangGraph, MCP, model routing, real provider adapters | Not implemented |
+| LangGraph, MCP, model routing | Not implemented |
 | Clients (Woven app, CLI, VS Code, API server) | CLI implemented for `chat` mode only; `plan`/`code` reachable via the direct Python API, not yet wired into the CLI |

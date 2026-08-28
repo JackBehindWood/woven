@@ -97,7 +97,6 @@ Exactly one local `User` — no multi-profile support, no profile-switching surf
 
 ## Explicitly out of scope (this slice)
 
-- No real model-provider consumption of `default_model_provider`/the stored API keys — pure storage today; wiring a real provider is `.claude/plans/model-providers.md`, sequenced next.
 - No `Project` model or `User`↔`Project` ownership wiring — that's `.claude/plans/projects.md`.
 - No multi-user/multi-profile support or profile-switching CLI surface.
 - No real authentication (login, tokens, sessions) — no concrete consumer exists until a networked client does.
@@ -121,7 +120,7 @@ Exactly one local `User` — no multi-profile support, no profile-switching surf
 | CLI persisted-default threading into `chat` (`--mode`/`--permission-mode`) | Implemented |
 | `woven settings show` / `woven settings set` (plain fields + hidden-prompt secret fields) | Implemented |
 | `/settings` REPL display of persisted values | Implemented (read-only) |
-| Real Gemini provider consuming the stored API key/`default_model_provider` | Not implemented — `.claude/plans/model-providers.md` |
+| Real Gemini provider consuming the stored API key/`default_model_provider` | Implemented — `GeminiProvider`, see `docs/architecture/agent-runtime.md`'s Model abstraction section |
 | Setup wizard / `doctor` diagnostics | Not implemented — `.claude/plans/setup-and-diagnostics.md` |
 | Multi-profile / multi-user / real auth | Not implemented — `.claude/plans/projects.md` |
 | OS keychain / encrypted secrets storage | Not implemented — plain file + `0600` is the current decision |

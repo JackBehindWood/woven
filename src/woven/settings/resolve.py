@@ -18,10 +18,11 @@ def resolve_runtime_config(
     *,
     mode: str | None = None,
     permission_mode: str | None = None,
+    model_provider: str | None = None,
 ) -> RuntimeConfig:
     """Merge CLI overrides onto persisted settings (CLI > persisted > default)."""
     return RuntimeConfig(
         mode=mode or config.settings.default_mode,
         permission_mode=permission_mode or config.settings.default_permission_mode,
-        model_provider=config.settings.default_model_provider,
+        model_provider=model_provider or config.settings.default_model_provider,
     )

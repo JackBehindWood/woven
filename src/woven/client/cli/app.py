@@ -21,7 +21,7 @@ from woven.client.cli.render import (
 from woven.client.cli.session import run_chat_turn
 from woven.client.cli.settings_command import settings_app
 from woven.context import ContextRequest, FilesystemContext
-from woven.models import FakeModel
+from woven.models import MODEL_PROVIDERS, FakeModel, Model
 from woven.modes import BUILTIN_MODES
 from woven.permissions import ApprovalPolicy, AutoApprovalPolicy
 from woven.runtime import AgentRun, AgentRuntime
@@ -68,6 +68,7 @@ class SessionState:
         default_factory=lambda: RuntimeConfig(mode="chat", permission_mode="guarded")
     )
     secret_store: SecretStore = field(default_factory=FileSecretStore)
+    model_description: str | None = None
 
 
 def _handle_help(console: Console, state: SessionState, argument: str) -> None:
@@ -81,7 +82,12 @@ def _handle_help(console: Console, state: SessionState, argument: str) -> None:
 def _handle_clear(console: Console, state: SessionState, argument: str) -> None:
     console.clear()
     render_banner(console)
-    render_header(console, response_text=state.response, mode_name=state.mode_name)
+    render_header(
+        console,
+        response_text=state.response,
+        mode_name=state.mode_name,
+        model_description=state.model_description,
+    )
     render_hint(console)
 
 
@@ -234,19 +240,34 @@ def chat(
         help="Tool-approval tier: auto, guarded, or manual. "
         "Defaults to the persisted setting.",
     ),
+    model_provider: str | None = typer.Option(
+        None,
+        "--model",
+        help="Model provider to use (e.g. gemini). "
+        "Defaults to the persisted setting, or FakeModel if none is set.",
+    ),
 ) -> None:
     """Start an interactive chat session against a built-in Mode.
 
-    This uses FakeModel — a deterministic stand-in with a fixed reply — since
-    Woven has no real model provider implemented yet. See --response to
-    change the canned reply, --mode to pick chat/plan/code, and
+    Without --model (and no persisted default-model-provider), this uses
+    FakeModel — a deterministic stand-in with a fixed reply. See --response
+    to change the canned reply, --mode to pick chat/plan/code, and
     --permission-mode to pick the tool-approval tier.
     """
-    _run_chat(response, mode=mode, permission_mode=permission_mode)
+    _run_chat(
+        response,
+        mode=mode,
+        permission_mode=permission_mode,
+        model_provider=model_provider,
+    )
 
 
 def _run_chat(
-    response: str, *, mode: str | None = None, permission_mode: str | None = None
+    response: str,
+    *,
+    mode: str | None = None,
+    permission_mode: str | None = None,
+    model_provider: str | None = None,
 ) -> None:
     console = make_console()
 
@@ -258,7 +279,10 @@ def _run_chat(
 
     persisted_runtime = resolve_runtime_config(config)
     runtime_config = resolve_runtime_config(
-        config, mode=mode, permission_mode=permission_mode
+        config,
+        mode=mode,
+        permission_mode=permission_mode,
+        model_provider=model_provider,
     )
     mode = runtime_config.mode
     permission_mode = runtime_config.permission_mode
@@ -277,10 +301,40 @@ def _run_chat(
         )
         raise typer.Exit(code=1)
 
+    model: Model
+    model_description: str | None = None
+    if runtime_config.model_provider is None:
+        model = FakeModel(response_text=response)
+    else:
+        provider = runtime_config.model_provider
+        provider_factory = MODEL_PROVIDERS.get(provider)
+        if provider_factory is None:
+            render_error(
+                console,
+                f"Unknown model provider: {provider}. "
+                f"Available: {', '.join(sorted(MODEL_PROVIDERS))}",
+            )
+            raise typer.Exit(code=1)
+        api_key = resolve_api_key(FileSecretStore(), provider)
+        if api_key is None:
+            render_error(
+                console,
+                f"No API key configured for {provider}. "
+                f"Run `woven settings set {provider}-api-key`.",
+            )
+            raise typer.Exit(code=1)
+        model = provider_factory(api_key)
+        model_description = f"{provider} ({model.model_id})"
+
     console.set_window_title("Woven")
     console.clear()
     render_banner(console)
-    render_header(console, response_text=response, mode_name=mode)
+    render_header(
+        console,
+        response_text=response,
+        mode_name=mode,
+        model_description=model_description,
+    )
     render_hint(console)
 
     state = SessionState(
@@ -289,11 +343,11 @@ def _run_chat(
         permission_mode=permission_mode,
         persisted_runtime=persisted_runtime,
         secret_store=FileSecretStore(),
+        model_description=model_description,
     )
 
     runtime = AgentRuntime()
     run = AgentRun(run_id=uuid.uuid4().hex)
-    model = FakeModel(response_text=response)
     tool = MockTools()
     context_source = FilesystemContext(root=Path.cwd())
     approval_policies: dict[str, ApprovalPolicy] = {

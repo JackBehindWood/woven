@@ -5,7 +5,8 @@ description = "Woven project foundation (development tooling only)"
 readme = "README.md"
 requires-python = ">=3.12,<4"
 dependencies = [
-  "pydantic>=2.0"
+  "pydantic>=2.0",
+  "google-genai>=1.0"
 ]
 
 [project.optional-dependencies]
