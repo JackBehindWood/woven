@@ -5,22 +5,34 @@ Usage:
     uv run examples/sandbox_gemini.py --model-id gemini-2.5-flash
     uv run examples/sandbox_gemini.py --context notes.py --prompt "what does this do?"
 
-Requires a Gemini API key, resolved the normal way: `GEMINI_API_KEY` env var,
-falling back to `woven settings set gemini-api-key` if unset.
+Requires a Gemini API key. Set `GEMINI_API_KEY` in examples/.env (copy
+examples/.env.example) or in your process environment.
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
 from woven.context import ContextFile, ContextSnapshot
 from woven.models import ModelError, ModelRequest
 from woven.models.providers import DEFAULT_GEMINI_MODEL_ID, GeminiProvider
-from woven.settings import FileSecretStore, resolve_api_key
+from woven.settings import PROVIDER_ENV_VARS
 
 _EXIT_WORDS = {"exit", "quit", ":q"}
+
+
+def _load_dotenv(path: Path) -> None:
+    if not path.exists():
+        return
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip())
 
 
 def _load_context(path: str | None) -> ContextSnapshot | None:
@@ -53,11 +65,12 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    api_key = resolve_api_key(FileSecretStore(), "gemini")
+    _load_dotenv(Path(__file__).parent / ".env")
+    api_key = os.environ.get(PROVIDER_ENV_VARS["gemini"])
     if api_key is None:
         print(
-            "No Gemini API key configured. Set GEMINI_API_KEY or run "
-            "`woven settings set gemini-api-key`.",
+            "No Gemini API key configured. Set GEMINI_API_KEY, e.g. in "
+            "examples/.env (copy examples/.env.example).",
             file=sys.stderr,
         )
         raise SystemExit(1)

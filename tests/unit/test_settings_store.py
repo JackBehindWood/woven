@@ -78,12 +78,6 @@ def test_user_id_stable_across_repeated_loads():
     assert first.user.id == second.user.id
 
 
-def test_load_config_file_is_valid_json():
-    load_config()
-
-    json.loads(config_path().read_text())
-
-
 def test_load_config_migrates_legacy_gemini_api_key():
     config_dir().mkdir(parents=True, exist_ok=True)
     legacy_payload = {

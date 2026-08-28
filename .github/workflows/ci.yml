@@ -29,10 +29,6 @@ jobs:
       run: |
         uv run ruff check .
 
-    - name: Run pytest only if tests exist
+    - name: Run pytest
       run: |
-        if compgen -G "tests/test_*.py" > /dev/null; then
-          uv run pytest -q
-        else
-          echo "No test files found, skipping pytest"
-        fi
+        uv run pytest -q

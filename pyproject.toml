@@ -35,6 +35,10 @@ python-preference = "managed"
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+markers = [
+  "integration: slower or environment-dependent (e.g. real local inference); never a billed third-party API call; excluded by default",
+]
+addopts = "-m 'not integration'"
 
 [tool.ruff]
 line-length = 88

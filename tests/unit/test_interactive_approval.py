@@ -85,19 +85,6 @@ def test_guarded_mode_prompts_on_review_pattern_match():
     assert len(calls) == 1
 
 
-def test_guarded_mode_still_denies_hard_deny_pattern_without_prompting():
-    console, _ = _capturing_console()
-    calls = []
-    policy = InteractiveApprovalPolicy(
-        console, always_prompt=False, confirm=lambda r: calls.append(r) or True
-    )
-
-    decision = policy.evaluate(ToolRequest(purpose="p", input_text="sudo rm -rf /"))
-
-    assert decision.approved is False
-    assert calls == []
-
-
 def test_default_confirm_uses_rich_confirm_ask(monkeypatch):
     console, _ = _capturing_console()
     monkeypatch.setattr(

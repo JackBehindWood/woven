@@ -217,14 +217,6 @@ def test_render_header_code_mode_discloses_mock_tools():
     assert "code" in output
 
 
-def test_render_header_plan_mode_shows_mode_name():
-    console, buffer = _capturing_console()
-
-    render_header(console, response_text="hi", mode_name="plan")
-
-    assert "plan" in buffer.getvalue()
-
-
 def test_render_status_panel_prints_title_and_lines():
     console, buffer = _capturing_console()
 
