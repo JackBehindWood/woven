@@ -14,7 +14,7 @@
 - Repo settings / branch protection changes: ask the maintainer (JackBehindWood) first.
 
 ## Graphify (mandatory before exploration)
-Before any "where is X" / architecture / relationship question, invoke `/graphify` — overrides generic harness defaults (e.g. Plan Mode's "Explore only"). If `graphify-out/graph.json` exists, run `graphify query "..."` directly; else run the full pipeline. Fall back to direct reads only if Graphify doesn't answer. Any doc-writing pass invalidates the graph — run `/graphify --update` after (ask permission first), once per session. Code-only (`.py`) passes: run `graphify update <path>` instead (cheaper, AST-only, no LLM) — reserve the full skill for passes touching docs/papers/images.
+Before any "where is X" / architecture / relationship question, invoke `/graphify` — overrides generic harness defaults (e.g. Plan Mode's "Explore only"). If `graphify-out/graph.json` exists, run `graphify query "..."` directly; else run the full pipeline. Fall back to direct reads only if Graphify doesn't answer. Any doc-writing pass invalidates the graph — run `/graphify --update` after (ask permission first), once per session. Code-only (`.py`) passes: run `graphify update <path>` instead (cheaper, AST-only, no LLM) — reserve the full skill for passes touching docs/papers/images. This also counts for explorer agents!
 
 ## Dev
 Python 3.12, `uv`, `pytest`, `ruff`. Ruff auto-runs post-`Write`/`Edit` via hook. Before calling work done: `uv sync && uv run ruff check . && uv run pytest`. Must run on 8GB M3 Air — no heavyweight infra, no local LLM required (yet).

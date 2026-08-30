@@ -5,12 +5,14 @@ from rich.console import Console
 from woven.client.cli.console import make_console
 from woven.client.cli.render import (
     render_banner,
+    render_diagnostics,
     render_event,
     render_header,
     render_hint,
     render_status_panel,
 )
 from woven.context import ContextFile, ContextSnapshot
+from woven.diagnostics import CheckStatus, DiagnosticCheck
 from woven.events import (
     ApprovalDecided,
     ApprovalRequested,
@@ -226,3 +228,39 @@ def test_render_status_panel_prints_title_and_lines():
     assert "status" in output
     assert "line one" in output
     assert "line two" in output
+
+
+def test_render_diagnostics_only_failures_hides_ok_but_keeps_summary():
+    console, buffer = _capturing_console()
+    checks = [
+        DiagnosticCheck(name="environment", status=CheckStatus.OK, message="fine"),
+        DiagnosticCheck(name="dependencies", status=CheckStatus.OK, message="fine"),
+    ]
+
+    render_diagnostics(console, checks, only_failures=True)
+
+    output = buffer.getvalue()
+    assert "environment" not in output
+    assert "dependencies" not in output
+    assert "2 ok, 0 warn, 0 fail" in output
+
+
+def test_render_diagnostics_only_failures_keeps_warn_and_fail_lines():
+    console, buffer = _capturing_console()
+    checks = [
+        DiagnosticCheck(name="environment", status=CheckStatus.OK, message="fine"),
+        DiagnosticCheck(
+            name="config:mode", status=CheckStatus.WARN, message="stale mode"
+        ),
+        DiagnosticCheck(
+            name="provider", status=CheckStatus.FAIL, message="unreachable"
+        ),
+    ]
+
+    render_diagnostics(console, checks, only_failures=True)
+
+    output = buffer.getvalue()
+    assert "environment" not in output
+    assert "config:mode" in output
+    assert "provider" in output
+    assert "1 ok, 1 warn, 1 fail" in output

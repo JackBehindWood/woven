@@ -5,6 +5,7 @@ from woven.settings.secrets import (
     FileSecretStore,
     SecretStore,
     resolve_api_key,
+    resolve_api_key_with_source,
     secrets_path,
 )
 from woven.settings.store import (
@@ -28,6 +29,7 @@ __all__ = [
     "config_path",
     "load_config",
     "resolve_api_key",
+    "resolve_api_key_with_source",
     "resolve_runtime_config",
     "save_config",
     "secrets_path",

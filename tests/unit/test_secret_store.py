@@ -1,6 +1,11 @@
 import os
 
-from woven.settings import PROVIDER_ENV_VARS, FileSecretStore, resolve_api_key
+from woven.settings import (
+    PROVIDER_ENV_VARS,
+    FileSecretStore,
+    resolve_api_key,
+    resolve_api_key_with_source,
+)
 from woven.settings.secrets import secrets_path
 
 
@@ -82,3 +87,26 @@ def test_resolve_api_key_unknown_provider_falls_back_to_store():
     store.set("mystery_api_key", "persisted-key")
 
     assert resolve_api_key(store, "mystery") == "persisted-key"
+
+
+def test_resolve_api_key_with_source_env_wins(monkeypatch):
+    monkeypatch.setenv(PROVIDER_ENV_VARS["gemini"], "env-key")
+    store = FileSecretStore()
+    store.set("gemini_api_key", "persisted-key")
+
+    assert resolve_api_key_with_source(store, "gemini") == ("env-key", "env")
+
+
+def test_resolve_api_key_with_source_falls_back_to_file(monkeypatch):
+    monkeypatch.delenv(PROVIDER_ENV_VARS["gemini"], raising=False)
+    store = FileSecretStore()
+    store.set("gemini_api_key", "persisted-key")
+
+    assert resolve_api_key_with_source(store, "gemini") == ("persisted-key", "file")
+
+
+def test_resolve_api_key_with_source_returns_none_when_neither_set(monkeypatch):
+    monkeypatch.delenv(PROVIDER_ENV_VARS["gemini"], raising=False)
+    store = FileSecretStore()
+
+    assert resolve_api_key_with_source(store, "gemini") is None

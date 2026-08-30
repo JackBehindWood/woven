@@ -117,12 +117,19 @@ _CHECK_STATUS_STYLE: dict[CheckStatus, tuple[str, str]] = {
 }
 
 
-def render_diagnostics(console: Console, checks: Iterable[DiagnosticCheck]) -> None:
+def render_diagnostics(
+    console: Console,
+    checks: Iterable[DiagnosticCheck],
+    *,
+    only_failures: bool = False,
+) -> None:
     checks = list(checks)
     lines: list[str] = []
     counts = {CheckStatus.OK: 0, CheckStatus.WARN: 0, CheckStatus.FAIL: 0}
     for check in checks:
         counts[check.status] += 1
+        if only_failures and check.status == CheckStatus.OK:
+            continue
         style, symbol = _CHECK_STATUS_STYLE[check.status]
         lines.append(f"[{style}]{symbol} {check.name}[/{style}]: {check.message}")
         if check.fix_hint:

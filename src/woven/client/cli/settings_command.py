@@ -13,7 +13,7 @@ from woven.settings import (
     resolve_api_key,
     save_config,
 )
-from woven.setup.fields import FIELDS
+from woven.setup.fields import FIELDS, coerce_value
 
 settings_app = register_group("settings")(
     typer.Typer(
@@ -96,7 +96,7 @@ def set_field(
         render_error(console, str(exc))
         raise typer.Exit(code=1) from None
 
-    new_settings = config.settings.model_copy(update={attr: value})
+    new_settings = config.settings.model_copy(update={attr: coerce_value(field, value)})
     new_config = config.model_copy(update={"settings": new_settings})
     save_config(new_config)
 

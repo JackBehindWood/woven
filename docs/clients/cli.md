@@ -123,7 +123,13 @@ A command or sub-app defined in its own module can't decorate itself with `@app.
 
 ```python
 @register_command("setup")
-def setup_command() -> None: ...
+def setup_command(
+    provider: str | None = typer.Option(None, "--provider"),
+    api_key: str | None = typer.Option(None, "--api-key"),
+    mode: str | None = typer.Option(None, "--mode"),
+    permission_mode: str | None = typer.Option(None, "--permission-mode"),
+    non_interactive: bool = typer.Option(False, "--non-interactive"),
+) -> None: ...
 
 settings_app = register_group("settings")(typer.Typer(...))
 ```

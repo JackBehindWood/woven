@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+# Sentinel value for `set_field("model-provider", ...)` that clears the
+# configured provider back to `None` (FakeModel). There's otherwise no way
+# back once a provider is set, since an empty string fails validation.
+CLEAR_SENTINEL = "none"
+
 
 def validate_mode(value: str) -> str | None:
     from woven.modes import BUILTIN_MODES
@@ -25,12 +30,27 @@ def validate_permission_mode(value: str) -> str | None:
 def validate_model_provider(value: str) -> str | None:
     from woven.models import MODEL_PROVIDERS
 
+    if value == CLEAR_SENTINEL:
+        return None
     if value not in MODEL_PROVIDERS:
         return (
             f"Unknown model provider: {value}. "
-            f"Available: {', '.join(sorted(MODEL_PROVIDERS))}"
+            f"Available: {', '.join(sorted(MODEL_PROVIDERS))}, {CLEAR_SENTINEL!r} "
+            "(clear)"
         )
     return None
+
+
+def coerce_value(field: str, value: str) -> str | None:
+    """Translate a validated raw value into what actually gets persisted.
+
+    Only `model-provider`'s clear sentinel needs this today: it validates as
+    a plain string but must persist as `None`. Every other field passes
+    through unchanged.
+    """
+    if field == "model-provider" and value == CLEAR_SENTINEL:
+        return None
+    return value
 
 
 # field name -> (Settings attribute, validator). Single source of truth for

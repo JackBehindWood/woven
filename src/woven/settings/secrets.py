@@ -67,10 +67,20 @@ class FileSecretStore:
         self._save(data)
 
 
-def resolve_api_key(store: SecretStore, provider: str) -> str | None:
+def resolve_api_key_with_source(
+    store: SecretStore, provider: str
+) -> tuple[str, str] | None:
     env_var = PROVIDER_ENV_VARS.get(provider)
     if env_var:
         env_value = os.environ.get(env_var)
         if env_value:
-            return env_value
-    return store.get(f"{provider}_api_key")
+            return env_value, "env"
+    file_value = store.get(f"{provider}_api_key")
+    if file_value is not None:
+        return file_value, "file"
+    return None
+
+
+def resolve_api_key(store: SecretStore, provider: str) -> str | None:
+    resolved = resolve_api_key_with_source(store, provider)
+    return resolved[0] if resolved is not None else None

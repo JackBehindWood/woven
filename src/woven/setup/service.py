@@ -8,9 +8,10 @@ from woven.settings import (
     FileSecretStore,
     SecretStore,
     load_config,
+    resolve_api_key,
     save_config,
 )
-from woven.setup.fields import FIELDS
+from woven.setup.fields import FIELDS, coerce_value
 
 
 class SetupError(Exception):
@@ -44,7 +45,9 @@ class SetupService:
             raise SetupError(error)
 
         config = self._load_config()
-        new_settings = config.settings.model_copy(update={attr: value})
+        new_settings = config.settings.model_copy(
+            update={attr: coerce_value(field, value)}
+        )
         new_config = config.model_copy(update={"settings": new_settings})
         self._save_config(new_config)
         return new_config
@@ -56,3 +59,6 @@ class SetupService:
                 f"Available: {', '.join(sorted(PROVIDER_ENV_VARS))}"
             )
         self._secret_store.set(f"{provider}_api_key", value)
+
+    def has_secret(self, provider: str) -> bool:
+        return resolve_api_key(self._secret_store, provider) is not None

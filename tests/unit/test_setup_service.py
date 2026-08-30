@@ -52,3 +52,36 @@ def test_set_secret_unknown_provider_raises_setup_error():
 
     with pytest.raises(SetupError, match="Unknown model provider"):
         service.set_secret("bogus", "x")
+
+
+def test_set_field_model_provider_none_clears_a_configured_provider():
+    service = SetupService()
+    service.set_field("model-provider", "gemini")
+
+    updated = service.set_field("model-provider", "none")
+
+    assert updated.settings.default_model_provider is None
+    assert load_config().settings.default_model_provider is None
+
+
+def test_set_field_model_provider_none_on_fresh_config_is_a_no_op():
+    service = SetupService()
+
+    updated = service.set_field("model-provider", "none")
+
+    assert updated.settings.default_model_provider is None
+
+
+def test_has_secret_false_when_not_configured():
+    service = SetupService(secret_store=FileSecretStore())
+
+    assert service.has_secret("gemini") is False
+
+
+def test_has_secret_true_after_set_secret():
+    store = FileSecretStore()
+    service = SetupService(secret_store=store)
+
+    service.set_secret("gemini", "super-secret")
+
+    assert service.has_secret("gemini") is True

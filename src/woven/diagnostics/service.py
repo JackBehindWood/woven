@@ -12,11 +12,30 @@ from woven.settings import (
     Config,
     FileSecretStore,
     SecretStore,
+    Settings,
     config_dir,
     config_path,
     load_config,
     resolve_api_key,
+    resolve_api_key_with_source,
+    save_config,
 )
+from woven.setup import CLEAR_SENTINEL, SetupService
+
+_SOURCE_LABELS = {"env": "environment variable", "file": "secrets file"}
+
+# `check_config_validity`'s WARN check name -> (`FIELDS` key, safe default).
+# Pulled from `Settings`'s own field defaults so they can't drift out of sync
+# with `woven.settings.models`. Only these three are "safely auto-correctable"
+# — never `credentials:*`/`provider`, which need a real key or network call.
+_FIXABLE_CONFIG_CHECKS: dict[str, tuple[str, str]] = {
+    "config:mode": ("mode", Settings.model_fields["default_mode"].default),
+    "config:permission-mode": (
+        "permission-mode",
+        Settings.model_fields["default_permission_mode"].default,
+    ),
+    "config:model-provider": ("model-provider", CLEAR_SENTINEL),
+}
 
 
 class CheckStatus(str, Enum):
@@ -39,10 +58,12 @@ class DiagnosticService:
         *,
         secret_store: SecretStore | None = None,
         load_config: Callable[[], Config] = load_config,
+        save_config: Callable[[Config], None] = save_config,
         model_providers: dict[str, type[Model]] = MODEL_PROVIDERS,
     ) -> None:
         self._secret_store = secret_store or FileSecretStore()
         self._load_config = load_config
+        self._save_config = save_config
         self._model_providers = model_providers
 
     def check_environment(self) -> DiagnosticCheck:
@@ -176,12 +197,16 @@ class DiagnosticService:
     def check_credentials(self) -> list[DiagnosticCheck]:
         checks: list[DiagnosticCheck] = []
         for provider in sorted(PROVIDER_ENV_VARS):
-            if resolve_api_key(self._secret_store, provider) is not None:
+            resolved = resolve_api_key_with_source(self._secret_store, provider)
+            if resolved is not None:
+                _, source = resolved
+                source_label = _SOURCE_LABELS[source]
                 checks.append(
                     DiagnosticCheck(
                         name=f"credentials:{provider}",
                         status=CheckStatus.OK,
-                        message=f"API key configured for {provider}.",
+                        message=f"API key configured for {provider} "
+                        f"(source: {source_label}).",
                     )
                 )
                 continue
@@ -249,6 +274,31 @@ class DiagnosticService:
             status=CheckStatus.OK,
             message=f"{provider} is reachable.",
         )
+
+    def fix_config_validity(self) -> list[str]:
+        """Reset any stale `config:*` field to its safe default. Returns one
+        plain-text message per field actually changed."""
+        service = SetupService(
+            secret_store=self._secret_store,
+            load_config=self._load_config,
+            save_config=self._save_config,
+        )
+        messages: list[str] = []
+        for check in self.check_config_validity():
+            if check.status != CheckStatus.WARN:
+                continue
+            entry = _FIXABLE_CONFIG_CHECKS.get(check.name)
+            if entry is None:
+                continue
+            field, safe_default = entry
+            service.set_field(field, safe_default)
+            if field == "model-provider":
+                messages.append(f"{check.name}: cleared (was invalid).")
+            else:
+                messages.append(
+                    f"{check.name}: reset to '{safe_default}' (was invalid)."
+                )
+        return messages
 
     def run_all(self) -> list[DiagnosticCheck]:
         checks: list[DiagnosticCheck] = [

@@ -93,6 +93,17 @@ def test_settings_set_model_provider_gemini_succeeds():
     assert "default model provider: gemini" in show_result.stdout
 
 
+def test_settings_set_model_provider_none_clears_a_configured_provider():
+    set_result = runner.invoke(app, ["settings", "set", "model-provider", "gemini"])
+    assert set_result.exit_code == 0
+
+    clear_result = runner.invoke(app, ["settings", "set", "model-provider", "none"])
+    assert clear_result.exit_code == 0
+
+    show_result = runner.invoke(app, ["settings", "show"])
+    assert "default model provider: (none)" in show_result.stdout
+
+
 def test_settings_set_model_provider_bogus_exits_1_and_leaves_file_unchanged():
     load_config()
     before = config_path().read_text()
