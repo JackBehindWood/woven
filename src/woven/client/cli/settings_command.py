@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-
 import typer
 
 from woven.client.cli.console import make_console
+from woven.client.cli.registry import register_group
 from woven.client.cli.render import render_error, render_status_panel
 from woven.settings import (
     PROVIDER_ENV_VARS,
@@ -14,57 +13,22 @@ from woven.settings import (
     resolve_api_key,
     save_config,
 )
+from woven.setup.fields import FIELDS
 
-settings_app = typer.Typer(
-    name="settings",
-    help="Show or persist Woven's default settings.",
-    add_completion=False,
+settings_app = register_group("settings")(
+    typer.Typer(
+        name="settings",
+        help="Show or persist Woven's default settings.",
+        add_completion=False,
+    )
 )
-
-
-def _validate_mode(value: str) -> str | None:
-    from woven.modes import BUILTIN_MODES
-
-    if value not in BUILTIN_MODES:
-        return f"Unknown mode: {value}. Available: {', '.join(sorted(BUILTIN_MODES))}"
-    return None
-
-
-def _validate_permission_mode(value: str) -> str | None:
-    from woven.client.cli.app import _PERMISSION_MODES
-
-    if value not in _PERMISSION_MODES:
-        return (
-            f"Unknown permission mode: {value}. "
-            f"Available: {', '.join(_PERMISSION_MODES)}"
-        )
-    return None
-
-
-def _validate_model_provider(value: str) -> str | None:
-    from woven.models import MODEL_PROVIDERS
-
-    if value not in MODEL_PROVIDERS:
-        return (
-            f"Unknown model provider: {value}. "
-            f"Available: {', '.join(sorted(MODEL_PROVIDERS))}"
-        )
-    return None
-
-
-# cli field name -> (Settings attribute, validator)
-_FIELDS: dict[str, tuple[str, Callable[[str], str | None]]] = {
-    "mode": ("default_mode", _validate_mode),
-    "permission-mode": ("default_permission_mode", _validate_permission_mode),
-    "model-provider": ("default_model_provider", _validate_model_provider),
-}
 
 # cli field name -> secret key in the SecretStore, one per known provider.
 _SECRET_FIELDS: dict[str, str] = {
     f"{provider}-api-key": f"{provider}_api_key" for provider in PROVIDER_ENV_VARS
 }
 
-_ALL_FIELD_NAMES = sorted({*_FIELDS, *_SECRET_FIELDS})
+_ALL_FIELD_NAMES = sorted({*FIELDS, *_SECRET_FIELDS})
 
 
 @settings_app.command("show")
@@ -108,7 +72,7 @@ def set_field(
         render_status_panel(console, "settings", [f"{field} set to: (hidden)"])
         return
 
-    entry = _FIELDS.get(field)
+    entry = FIELDS.get(field)
     if entry is None:
         render_error(
             console,

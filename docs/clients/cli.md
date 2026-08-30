@@ -113,7 +113,32 @@ An unrecognized `/foo` renders an error via the existing `render_error()` and th
 
 `--mode`/`--permission-mode` now default to `None` rather than a hardcoded string, so `_run_chat` (`app.py`) can distinguish "flag not passed" from "use the persisted default." Resolution order is CLI flag → persisted `Settings` value (`woven.settings.load_config()`) → the hardcoded `Settings` field default (`"chat"`/`"guarded"`). This applies to the bare `woven` invocation too (`main()` calls `_run_chat(DEFAULT_RESPONSE)` with no mode/permission-mode override), so it now starts in whatever mode/tier was last persisted via `woven settings set`, not always `chat`/`guarded`. A `ConfigError` from a corrupt config file is rendered and exits the process with code 1, the same pattern as an invalid `--mode`/`--permission-mode` value.
 
-`woven settings show` / `woven settings set <field> [value]` (`src/woven/client/cli/settings_command.py`, mounted via `app.add_typer(settings_app, name="settings")`) is the out-of-session mutation surface — see `docs/architecture/user-settings.md` for the full design of the underlying `src/woven/settings/` package. `show` prints the user id/name, every plain setting, and one `"<provider> api key: set|not set"` line per known provider (never the raw value); `set` validates `field` (`mode` against `BUILTIN_MODES`, `permission-mode` against `_PERMISSION_MODES`, `model-provider` unvalidated) before writing plain fields, exiting 1 without touching the file on an invalid field/value. A secret field (currently `gemini-api-key`) takes `value` as optional — if omitted, it's collected via a hidden prompt instead of a plain CLI argument (so it never lands in shell history or `ps` output) and is written to a separate `secrets.json`, not `config.json`.
+`woven settings show` / `woven settings set <field> [value]` (`src/woven/client/cli/settings_command.py`, mounted via `register_group("settings")`, see "Top-level commands and the registry" below) is the out-of-session mutation surface — see `docs/architecture/user-settings.md` for the full design of the underlying `src/woven/settings/` package. `show` prints the user id/name, every plain setting, and one `"<provider> api key: set|not set"` line per known provider (never the raw value); `set` validates `field` (`mode` against `BUILTIN_MODES`, `permission-mode` against `PERMISSION_MODES`, `model-provider` against `MODEL_PROVIDERS` — all three via `FIELDS`, `src/woven/setup/fields.py`) before writing plain fields, exiting 1 without touching the file on an invalid field/value. A secret field (currently `gemini-api-key`) takes `value` as optional — if omitted, it's collected via a hidden prompt instead of a plain CLI argument (so it never lands in shell history or `ps` output) and is written to a separate `secrets.json`, not `config.json`.
+
+## Top-level commands and the registry
+
+`woven` has four top-level Typer entries: `chat` (defined directly in `app.py`, via `@app.command()`), `settings` (a sub-`Typer`, `settings_command.py`), and `setup`/`doctor` (plain commands, `setup_command.py`/`doctor_command.py`) — see `docs/architecture/setup-and-diagnostics.md` for what the latter two actually do; this section covers only how they get wired onto `app`.
+
+A command or sub-app defined in its own module can't decorate itself with `@app.command()`/`app.add_typer()` directly — that module is imported *by* `app.py`, so importing `app` back to decorate against would be circular. `src/woven/client/cli/registry.py` breaks that cycle with two decorator-factories:
+
+```python
+@register_command("setup")
+def setup_command() -> None: ...
+
+settings_app = register_group("settings")(typer.Typer(...))
+```
+
+Each just appends `(name, func_or_typer)` to a module-level list (`register_group` is applied directly to the constructed `typer.Typer()` — a decorator is just `f = dec(f)`, and a plain object has no `def`/`class` line for `@` syntax to attach to). `app.py` imports every command/group module purely for this side effect (`from woven.client.cli import setup_command as _setup_command_module  # noqa: F401`), then wires the registry onto `app` once at import time:
+
+```python
+for _group_name, _group in registered_groups():
+    app.add_typer(_group, name=_group_name)
+for _name, _func in registered_commands():
+    app.command(_name)(_func)
+clear()
+```
+
+`clear()` drops the registry's own references immediately after — `app` already holds what it needs, so nothing depends on the registry past CLI startup. `chat` stays a plain `@app.command()` in `app.py` itself since it has no cross-module cycle to solve; the registry exists for modules that do.
 
 ## Per-mode wiring
 
@@ -176,6 +201,7 @@ A real provider is opt-in via `--model <provider>` (e.g. `--model gemini`), mirr
 | Real (non-mock) context retrieval in the CLI | Implemented — `FilesystemContext(root=Path.cwd())`, driven by `/context` |
 | Demo tool disclosure + tool-call rendering | Implemented — `MockTools()` in `code` mode |
 | Interactive tool-call approval | Implemented — `InteractiveApprovalPolicy`, three selectable tiers (see "Permission modes" above) |
+| `woven setup` / `woven doctor` commands, cross-module command registry | Implemented — see `docs/architecture/setup-and-diagnostics.md` and "Top-level commands and the registry" above |
 | `--verbose` flag (reveal `RunStarted`/`TurnStarted`/`RunCompleted`) | Not implemented — no current demand |
 | Live/streaming event rendering | Not implemented — blocked on the `run_turn` `EventSink`-injection gap above |
 | Session persistence across CLI invocations | Not implemented — matches the runtime being fully in-memory |

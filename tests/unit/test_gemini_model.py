@@ -1,3 +1,4 @@
+import httpx
 import pytest
 from google.genai import errors
 
@@ -12,11 +13,17 @@ class _FakeGenaiResponse:
 
 class _FakeGenaiModels:
     def __init__(
-        self, response_text: str | None = "hello", *, error: Exception | None = None
+        self,
+        response_text: str | None = "hello",
+        *,
+        error: Exception | None = None,
+        get_error: Exception | None = None,
     ):
         self.response_text = response_text
         self.error = error
+        self.get_error = get_error
         self.calls: list[dict[str, object]] = []
+        self.get_calls: list[dict[str, object]] = []
 
     def generate_content(self, *, model: str, contents: str) -> _FakeGenaiResponse:
         self.calls.append({"model": model, "contents": contents})
@@ -24,12 +31,31 @@ class _FakeGenaiModels:
             raise self.error
         return _FakeGenaiResponse(self.response_text)
 
+    def get(self, *, model: str) -> object:
+        self.get_calls.append({"model": model})
+        if self.get_error is not None:
+            raise self.get_error
+        return object()
+
 
 class _FakeGenaiClient:
     def __init__(
-        self, *, response_text: str | None = "hello", error: Exception | None = None
+        self,
+        *,
+        response_text: str | None = "hello",
+        error: Exception | None = None,
+        get_error: Exception | None = None,
     ):
-        self.models = _FakeGenaiModels(response_text=response_text, error=error)
+        self.models = _FakeGenaiModels(
+            response_text=response_text, error=error, get_error=get_error
+        )
+
+
+def _api_error(code: int, message: str) -> errors.APIError:
+    return errors.APIError(
+        code=code,
+        response_json={"error": {"message": message, "status": "ERROR"}},
+    )
 
 
 def test_generate_returns_response_text_from_client():
@@ -101,3 +127,96 @@ def test_provider_exposes_provider_name_and_model_id():
 
     assert provider.provider_name == "gemini"
     assert provider.model_id == "gemini-test-id"
+
+
+@pytest.mark.parametrize("exc_cls", [httpx.ConnectError, httpx.TimeoutException])
+def test_generate_raises_model_error_on_network_failure(exc_cls):
+    client = _FakeGenaiClient(error=exc_cls("boom"))
+    provider = GeminiProvider(api_key="key", client=client)
+
+    with pytest.raises(ModelError, match="Gemini unreachable: network error"):
+        provider.generate(ModelRequest(purpose="chat_reply", input_text="hi"))
+
+
+def test_check_connection_calls_models_get_with_model_id():
+    client = _FakeGenaiClient()
+    provider = GeminiProvider(api_key="key", model_id="gemini-test-id", client=client)
+
+    provider.check_connection()
+
+    assert client.models.get_calls == [{"model": "gemini-test-id"}]
+
+
+@pytest.mark.parametrize("code", [401, 403])
+def test_check_connection_raises_model_error_for_invalid_key(code):
+    client = _FakeGenaiClient(get_error=_api_error(code, "bad key"))
+    provider = GeminiProvider(api_key="key", client=client)
+
+    with pytest.raises(ModelError, match="API key rejected"):
+        provider.check_connection()
+
+
+def test_check_connection_raises_model_error_for_real_world_invalid_key_response():
+    # Google's live response to a bad key is 400/INVALID_ARGUMENT with an
+    # "API key not valid" message, not 401/403 - verified against a real call.
+    client = _FakeGenaiClient(
+        get_error=_api_error(400, "API key not valid. Please pass a valid API key.")
+    )
+    provider = GeminiProvider(api_key="key", client=client)
+
+    with pytest.raises(ModelError, match="API key rejected"):
+        provider.check_connection()
+
+
+def test_check_connection_treats_unrelated_400_as_generic_failure():
+    client = _FakeGenaiClient(get_error=_api_error(400, "model not found"))
+    provider = GeminiProvider(api_key="key", client=client)
+
+    with pytest.raises(ModelError, match="Gemini request failed: model not found"):
+        provider.check_connection()
+
+
+def test_check_connection_raises_model_error_for_rate_limit():
+    client = _FakeGenaiClient(get_error=_api_error(429, "slow down"))
+    provider = GeminiProvider(api_key="key", client=client)
+
+    with pytest.raises(ModelError, match="rate limited or quota exceeded"):
+        provider.check_connection()
+
+
+@pytest.mark.parametrize("code", [500, 503])
+def test_check_connection_raises_model_error_for_service_unavailable(code):
+    client = _FakeGenaiClient(get_error=_api_error(code, "down"))
+    provider = GeminiProvider(api_key="key", client=client)
+
+    with pytest.raises(ModelError, match="service unavailable"):
+        provider.check_connection()
+
+
+def test_check_connection_raises_model_error_for_other_api_error():
+    client = _FakeGenaiClient(get_error=_api_error(418, "teapot"))
+    provider = GeminiProvider(api_key="key", client=client)
+
+    with pytest.raises(ModelError, match="Gemini request failed: teapot"):
+        provider.check_connection()
+
+
+@pytest.mark.parametrize("exc_cls", [httpx.ConnectError, httpx.TimeoutException])
+def test_check_connection_raises_model_error_on_network_failure(exc_cls):
+    client = _FakeGenaiClient(get_error=exc_cls("boom"))
+    provider = GeminiProvider(api_key="key", client=client)
+
+    with pytest.raises(ModelError, match="Gemini unreachable: network error"):
+        provider.check_connection()
+
+
+def test_check_connection_succeeds_when_get_does_not_raise():
+    client = _FakeGenaiClient()
+    provider = GeminiProvider(api_key="key", client=client)
+
+    provider.check_connection()
+
+
+def test_setup_hint_is_a_non_empty_string_accessible_on_the_class():
+    assert isinstance(GeminiProvider.SETUP_HINT, str)
+    assert GeminiProvider.SETUP_HINT

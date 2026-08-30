@@ -8,8 +8,12 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
+from woven.client.cli import doctor_command as _doctor_command_module  # noqa: F401
+from woven.client.cli import settings_command as _settings_command_module  # noqa: F401
+from woven.client.cli import setup_command as _setup_command_module  # noqa: F401
 from woven.client.cli.approval import InteractiveApprovalPolicy
 from woven.client.cli.console import make_console
+from woven.client.cli.registry import clear, registered_commands, registered_groups
 from woven.client.cli.render import (
     render_banner,
     render_error,
@@ -19,11 +23,10 @@ from woven.client.cli.render import (
     render_status_panel,
 )
 from woven.client.cli.session import run_chat_turn
-from woven.client.cli.settings_command import settings_app
 from woven.context import ContextRequest, FilesystemContext
 from woven.models import MODEL_PROVIDERS, FakeModel, Model
 from woven.modes import BUILTIN_MODES
-from woven.permissions import ApprovalPolicy, AutoApprovalPolicy
+from woven.permissions import PERMISSION_MODES, ApprovalPolicy, AutoApprovalPolicy
 from woven.runtime import AgentRun, AgentRuntime
 from woven.settings import (
     PROVIDER_ENV_VARS,
@@ -42,11 +45,14 @@ app = typer.Typer(
     help="Woven — a local-first AI agent platform. This is an early CLI slice.",
     add_completion=False,
 )
-app.add_typer(settings_app, name="settings")
+for _group_name, _group in registered_groups():
+    app.add_typer(_group, name=_group_name)
+for _name, _func in registered_commands():
+    app.command(_name)(_func)
+clear()
 
 DEFAULT_RESPONSE = "This is a fixed demo reply — Woven has no real model connected yet."
 _EXIT_WORDS = {"exit", "quit", ":q"}
-_PERMISSION_MODES: tuple[str, ...] = ("auto", "guarded", "manual")
 
 # Modes that get real (non-mock) context retrieval / tool access / approval
 # gating in the CLI — kept in one place so `_run_chat`'s per-turn wiring and
@@ -113,15 +119,15 @@ def _handle_permission(console: Console, state: SessionState, argument: str) -> 
     if not name:
         lines = [f"current: {state.permission_mode}"]
         lines.extend(
-            f"{m} (default)" if m == "guarded" else m for m in _PERMISSION_MODES
+            f"{m} (default)" if m == "guarded" else m for m in PERMISSION_MODES
         )
         render_status_panel(console, "permission", lines)
         return
-    if name not in _PERMISSION_MODES:
+    if name not in PERMISSION_MODES:
         render_error(
             console,
             f"Unknown permission mode: {name}. "
-            f"Available: {', '.join(_PERMISSION_MODES)}",
+            f"Available: {', '.join(PERMISSION_MODES)}",
         )
         return
     state.permission_mode = name
@@ -293,11 +299,11 @@ def _run_chat(
             f"Unknown mode: {mode}. Available: {', '.join(sorted(BUILTIN_MODES))}",
         )
         raise typer.Exit(code=1)
-    if permission_mode not in _PERMISSION_MODES:
+    if permission_mode not in PERMISSION_MODES:
         render_error(
             console,
             f"Unknown permission mode: {permission_mode}. "
-            f"Available: {', '.join(_PERMISSION_MODES)}",
+            f"Available: {', '.join(PERMISSION_MODES)}",
         )
         raise typer.Exit(code=1)
 

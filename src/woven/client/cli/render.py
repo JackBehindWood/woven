@@ -9,6 +9,7 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 
 from woven import __version__
+from woven.diagnostics import CheckStatus, DiagnosticCheck
 from woven.events import (
     ApprovalDecided,
     ApprovalRequested,
@@ -107,6 +108,32 @@ def render_error(console: Console, message: str) -> None:
             title_align="left",
         )
     )
+
+
+_CHECK_STATUS_STYLE: dict[CheckStatus, tuple[str, str]] = {
+    CheckStatus.OK: ("woven.success", "✓"),
+    CheckStatus.WARN: ("woven.warning", "!"),
+    CheckStatus.FAIL: ("woven.error", "✗"),
+}
+
+
+def render_diagnostics(console: Console, checks: Iterable[DiagnosticCheck]) -> None:
+    checks = list(checks)
+    lines: list[str] = []
+    counts = {CheckStatus.OK: 0, CheckStatus.WARN: 0, CheckStatus.FAIL: 0}
+    for check in checks:
+        counts[check.status] += 1
+        style, symbol = _CHECK_STATUS_STYLE[check.status]
+        lines.append(f"[{style}]{symbol} {check.name}[/{style}]: {check.message}")
+        if check.fix_hint:
+            lines.append(f"  [woven.dim]fix:[/woven.dim] {check.fix_hint}")
+
+    lines.append("")
+    lines.append(
+        f"{counts[CheckStatus.OK]} ok, {counts[CheckStatus.WARN]} warn, "
+        f"{counts[CheckStatus.FAIL]} fail"
+    )
+    render_status_panel(console, "doctor", lines)
 
 
 def render_help(

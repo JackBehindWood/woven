@@ -160,21 +160,25 @@ class ModelResponse(BaseModel):
 class Provider(Protocol):
     provider_name: str
     model_id: str
+
+    def check_connection(self) -> None: ...
 ```
 
-Deliberately excludes the API key — this protocol exists purely for identification, never for exposing a secret as a public, structurally-matched attribute. No hook methods, no shared HTTP-call loop: with exactly one real provider, that shared machinery has no second implementation to prove it against yet.
+Deliberately excludes the API key — this protocol exists purely for identification, never for exposing a secret as a public, structurally-matched attribute. `check_connection()` (raises `ModelError` on failure) was added by `.claude/plans/setup-and-diagnostics.md` as the first hook on this protocol — `woven doctor`'s provider-reachability check needed a cheap, generation-token-free way to validate a key/connection, and that's exactly the second concrete use case (beyond `generate()`'s own error handling) that justifies a real method here now. See `docs/architecture/setup-and-diagnostics.md` for the full design.
 
 ## GeminiProvider
 
 **Current implementation** (`src/woven/models/providers/gemini.py`): the first real `Model` implementation, backed by the official `google-genai` SDK (`genai.Client`, not a hand-rolled HTTP client — the SDK absorbs Gemini API wire-protocol drift that a hand-rolled client would need to track manually).
 
-- Implements `Model` (via `generate()`) and `Provider` (via `provider_name`/`model_id`) structurally — no inheritance from either.
+- Implements `Model` (via `generate()`) and `Provider` (via `provider_name`/`model_id`/`check_connection()`) structurally — no inheritance from either.
 - `generate()` concatenates `request.context`'s file contents (if any) with `request.input_text` into one plain string passed as the SDK's `contents` param; `request.purpose` stays unused, same as `FakeModel`.
-- `client: genai.Client | None = None` is a constructor injection point — tests substitute a small fake double shaped like `genai.Client` (a `.models.generate_content(model=, contents=)` method), never real network calls or `vcrpy` cassettes. See `tests/test_gemini_model.py`.
-- Maps `google.genai.errors.APIError` → `ModelError`, and an empty/`None` `response.text` → `ModelError`, so callers only ever see the one exception type the `Model` protocol already implies.
+- `client: genai.Client | None = None` is a constructor injection point — tests substitute a small fake double shaped like `genai.Client` (a `.models.generate_content(model=, contents=)` / `.models.get(model=)` pair of methods), never real network calls or `vcrpy` cassettes. See `tests/unit/test_gemini_model.py`.
+- Maps `google.genai.errors.APIError` → `ModelError`, and an empty/`None` `response.text` → `ModelError`, so callers only ever see the one exception type the `Model` protocol already implies. Both `generate()` and `check_connection()` also catch `(httpx.ConnectError, httpx.TimeoutException)` → `ModelError("Gemini unreachable: network error")` — the `google-genai` SDK retries these internally but re-raises the raw `httpx` exception once retries are exhausted (`reraise=True`), so without this second `except` clause a genuine network outage would leak an unhandled `httpx` traceback instead of the clean `ModelError` every other failure path produces.
+- `check_connection()` calls `self._client.models.get(model=self.model_id)` — a cheap metadata call, not `generate()` — so `woven doctor` can validate a key/connection without spending real generation tokens on every run. It differentiates failure causes for a more actionable message: an invalid key → "Gemini API key rejected" (real Gemini responses return this as HTTP 400/`INVALID_ARGUMENT` with an "API key not valid" message, not 401/403 as the HTTP status alone would suggest — 401/403 are kept as a defensive fallback), `429` → "rate limited or quota exceeded", `5xx` → "service unavailable, try again later", anything else → the same flat message `generate()` uses.
+- `SETUP_HINT: ClassVar[str]` — a short human-readable string pointing at where to get a free Gemini API key, readable directly off the class (`GeminiProvider.SETUP_HINT`) without constructing an instance — `woven setup` prints it before prompting for a key, and `woven doctor` references it in its "no key configured" fix-hint.
 - `DEFAULT_GEMINI_MODEL_ID` (`"gemini-3.7-flash"` as of 2026-08-28) is hardcoded, not a `Settings` field — Gemini's model-id strings have churned enough (confirmed via `ai.google.dev/gemini-api/docs/models`) that this is expected to need periodic updates, not a one-time choice.
-- `src/woven/models/providers/__init__.py` exports a flat `MODEL_PROVIDERS: dict[str, Callable[[str], Model]]` registry (`{"gemini": lambda api_key: GeminiProvider(api_key=api_key)}`) — mirrors `BUILTIN_MODES`'s own precedent (`src/woven/modes/core.py`): a plain dict, not a plugin/loader system, until a second real provider exists to justify one.
-- No streaming, no model-driven tool calls, no capabilities/metadata beyond `Provider`'s two fields — `Model.generate(request) -> response` is unchanged. Each of these has its own forward-looking roadmap item instead of being built now or forgotten (see `.claude/plans/roadmap.md` items 6, 8, 9, 15).
+- `src/woven/models/providers/__init__.py` exports a flat `MODEL_PROVIDERS: dict[str, type[Model]]` registry (`{"gemini": GeminiProvider}`) — the provider **class** itself, not a wrapping lambda, so `SETUP_HINT` is reachable pre-instantiation (`MODEL_PROVIDERS[name].SETUP_HINT`) for `woven setup`'s guided flow. Mirrors `BUILTIN_MODES`'s own precedent (`src/woven/modes/core.py`): a plain dict, not a plugin/loader system, until a second real provider exists to justify one.
+- No streaming, no model-driven tool calls, no capabilities/metadata beyond `Provider`'s fields — `Model.generate(request) -> response` is unchanged. Each of these has its own forward-looking roadmap item instead of being built now or forgotten (see `.claude/plans/roadmap.md` items 6, 8, 9, 15).
 
 Manual/live verification against the real Gemini API happens via `examples/sandbox_gemini.py` (a standalone script, not pytest-collected) — the automated suite never makes a network call, deliberately, so a stray env var or CI misconfiguration can't trigger a real, billed API call.
 
@@ -319,6 +323,7 @@ Deterministic testing is a permanent architectural requirement: the runtime must
 | WorkflowState | Implemented (fields added only as each node kind needed them) |
 | Model protocol, ModelRequest/Response, FakeModel | Implemented (`ModelRequest.context` added once `context_node` existed) |
 | Provider protocol, GeminiProvider, MODEL_PROVIDERS | Implemented — Gemini only; local/server-based providers are `.claude/plans/local-inference.md` |
+| `Provider.check_connection()`, `SETUP_HINT` | Implemented — see `docs/architecture/setup-and-diagnostics.md` |
 | Events (12 types, callback-collected) | Implemented |
 | Errors (`ModelError`/`ToolError`/`ContextError`/`ApprovalDenied` → `RunFailed`) | Implemented |
 | Tools (`Tool` protocol, `tool_node`, `MockTools`) | Implemented — wired into `code` mode, always gated by `approval_node` |
