@@ -17,7 +17,7 @@ from woven.models import Model, ModelError
 from woven.modes import BUILTIN_MODES
 from woven.permissions import ApprovalDenied, ApprovalPolicy
 from woven.tools import Tool, ToolError
-from woven.workflow import WorkflowState
+from woven.workflow import WorkflowError, WorkflowState
 
 
 class Turn(BaseModel):
@@ -72,7 +72,13 @@ class AgentRuntime:
 
         try:
             state = workflow.run(state, emit)
-        except (ModelError, ToolError, ContextError, ApprovalDenied) as exc:
+        except (
+            ModelError,
+            ToolError,
+            ContextError,
+            ApprovalDenied,
+            WorkflowError,
+        ) as exc:
             emit(RunFailed(turn_id=turn.turn_id, run_id=run.run_id, error=str(exc)))
             raise
 

@@ -89,11 +89,11 @@ Exactly one local `User` — no multi-profile support, no profile-switching surf
 
 `tests/conftest.py`'s autouse `_isolated_config_home` fixture sets `XDG_CONFIG_HOME` to a `tmp_path` subdirectory and unsets every provider's environment variable (iterating `PROVIDER_ENV_VARS`) for every test — so no test run ever touches the real `~/.config/woven/` or picks up a real API key from the developer's shell environment. This fixture is required infrastructure for any test that invokes `chat`/`settings` — every pre-existing `chat`-invoking test in `test_cli_app.py` depends on it implicitly.
 
-- `tests/test_settings_store.py` — `load_config`/`save_config`, permissions, corrupt-file handling, `User.id` stability, and the legacy `gemini_api_key` migration.
-- `tests/test_secret_store.py` — `FileSecretStore` get/set/delete, missing-file behavior, permission self-heal, `resolve_api_key` precedence.
-- `tests/test_settings_resolve.py` — `resolve_runtime_config` precedence (CLI override > persisted > hardcoded default).
-- `tests/test_cli_settings.py` — the `woven settings show`/`set` subcommand, including the hidden-prompt path for a secret field with no value argument.
-- `tests/test_cli_app.py` — CLI-integration behavior: persisted defaults flowing into `chat`, flags overriding them, and the `/settings` display.
+- `tests/unit/test_settings_store.py` — `load_config`/`save_config`, permissions, corrupt-file handling, `User.id` stability, and the legacy `gemini_api_key` migration.
+- `tests/unit/test_secret_store.py` — `FileSecretStore` get/set/delete, missing-file behavior, permission self-heal, `resolve_api_key` precedence.
+- `tests/unit/test_settings_resolve.py` — `resolve_runtime_config` precedence (CLI override > persisted > hardcoded default).
+- `tests/unit/test_cli_settings.py` — the `woven settings show`/`set` subcommand, including the hidden-prompt path for a secret field with no value argument.
+- `tests/unit/test_cli_app.py` — CLI-integration behavior: persisted defaults flowing into `chat`, flags overriding them, and the `/settings` display.
 
 ## Explicitly out of scope (this slice)
 

@@ -19,6 +19,7 @@ from woven.models import FakeModel, ModelError
 from woven.permissions import ApprovalDenied, AutoApprovalPolicy, MockApproval
 from woven.runtime import AgentRun, AgentRuntime
 from woven.tools import MockTools, ToolError
+from woven.workflow import WorkflowError
 
 
 def test_run_turn_executes_and_returns_output():
@@ -238,3 +239,17 @@ def test_run_turn_code_mode_tool_error_produces_failure_event(tmp_path):
         )
 
     assert [type(e) for e in run.events][-1] is RunFailed
+
+
+def test_run_turn_plan_mode_missing_context_source_produces_failure_event():
+    runtime = AgentRuntime()
+    run = AgentRun(run_id="r1")
+
+    with pytest.raises(WorkflowError):
+        runtime.run_turn(run, "plan", "hi", FakeModel(response_text="plan reply"))
+
+    assert [type(e) for e in run.events] == [
+        RunStarted,
+        TurnStarted,
+        RunFailed,
+    ]

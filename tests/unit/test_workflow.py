@@ -7,6 +7,7 @@ from woven.permissions import ApprovalDenied, MockApproval
 from woven.tools import MockTools
 from woven.workflow import (
     Workflow,
+    WorkflowError,
     WorkflowState,
     approval_node,
     context_node,
@@ -154,3 +155,27 @@ def test_workflow_stops_before_tool_when_approval_denied():
         workflow.run(state, events.append)
 
     assert tool.received_requests == []
+
+
+def test_tool_node_missing_tool_raises_workflow_error():
+    events: list[Event] = []
+    state = WorkflowState(turn_id="t1", input_text="hi", model=FakeModel())
+
+    with pytest.raises(WorkflowError):
+        tool_node(state, events.append)
+
+
+def test_context_node_missing_context_source_raises_workflow_error():
+    events: list[Event] = []
+    state = WorkflowState(turn_id="t1", input_text="hi", model=FakeModel())
+
+    with pytest.raises(WorkflowError):
+        context_node(state, events.append)
+
+
+def test_approval_node_missing_approval_raises_workflow_error():
+    events: list[Event] = []
+    state = WorkflowState(turn_id="t1", input_text="hi", model=FakeModel())
+
+    with pytest.raises(WorkflowError):
+        approval_node(state, events.append)

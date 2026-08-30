@@ -8,6 +8,7 @@ from woven.models import Model, ModelError
 from woven.permissions import ApprovalDenied, ApprovalPolicy
 from woven.runtime import AgentRun, AgentRuntime, Turn
 from woven.tools import Tool, ToolError
+from woven.workflow import WorkflowError
 
 
 def run_chat_turn(
@@ -40,7 +41,7 @@ def run_chat_turn(
                 context_request=context_request,
                 approval=approval,
             )
-    except (ModelError, ToolError, ContextError, ApprovalDenied):
+    except (ModelError, ToolError, ContextError, ApprovalDenied, WorkflowError):
         render_event(run.events[-1], console)
         return None
     except KeyError as exc:

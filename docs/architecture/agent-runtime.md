@@ -103,7 +103,7 @@ class WorkflowState(BaseModel):
 
 `turn_id` is included so `model_node` can stamp it onto the events it emits without threading a second parameter through every step. Being frozen, each step produces a new state via `state.model_copy(update={...})` rather than mutating in place. Every field was added only once a concrete step reads or writes it (`tool` for `tool_node`; `context_source`/`context_request`/`context` for `context_node`, with `context` also read by `model_node`; `approval` for `approval_node`) — no speculative fields.
 
-None of `context_node`, `approval_node`, or `tool_node` guard against their required field being `None` (`state.context_source.retrieve(...)`, `state.approval.evaluate(...)`, `state.tool.execute(...)` all raise a plain `AttributeError` if unset). This is a deliberate, uniform precedent: adding validation to only the newer node kinds would be *inconsistent*, not safer — see `decisions.md`.
+`context_node`, `approval_node`, and `tool_node` each guard their required field being `None` before touching it, raising `WorkflowError("<field> is required for this step")` (`state.context_source`, `state.approval`, `state.tool` respectively) rather than letting a bare `AttributeError` leak out. This closes a gap that was harmless only while `modes/core.py`'s fixed per-mode step lists guaranteed reachability by construction — see the Errors section below and `decisions.md`.
 
 ## Model abstraction
 
@@ -294,11 +294,11 @@ The event sequence for a successful turn depends on the mode's step list:
 
 ## Errors
 
-**Current implementation** (`src/woven/runtime/core.py`): four exception types, each raised by one collaborator on failure — `ModelError` (`Model`), `ToolError` (`Tool`), `ContextError` (`Context`), `ApprovalDenied` (`ApprovalPolicy`, via `approval_node`). `AgentRuntime.run_turn` catches all four in one `except (ModelError, ToolError, ContextError, ApprovalDenied) as exc:` clause, appends a `RunFailed` event (recording the failure before the exception surfaces to the caller), and re-raises — failures are recorded, never swallowed.
+**Current implementation** (`src/woven/runtime/core.py`): five exception types, each raised by one collaborator on failure — `ModelError` (`Model`), `ToolError` (`Tool`), `ContextError` (`Context`), `ApprovalDenied` (`ApprovalPolicy`, via `approval_node`), `WorkflowError` (`src/woven/workflow/core.py`, raised by `tool_node`/`context_node`/`approval_node` when their required `WorkflowState` field is `None`). `AgentRuntime.run_turn` catches all five in one `except (ModelError, ToolError, ContextError, ApprovalDenied, WorkflowError) as exc:` clause, appends a `RunFailed` event (recording the failure before the exception surfaces to the caller), and re-raises — failures are recorded, never swallowed. `src/woven/client/cli/session.py`'s `run_chat_turn` catches the same five types so a CLI-level wiring bug renders as a normal error, not a stack trace.
 
-Before `plan`/`code` modes existed, only `ModelError` was reachable (no mode used `tool_node`/`context_node`/`approval_node`), so the `except` clause only needed to name it. Adding `plan`/`code` is what first makes `ToolError`/`ContextError`/`ApprovalDenied` reachable through a real mode — the clause was broadened at that point specifically to keep the "failures are recorded, never swallowed" invariant true once those modes exist, not narrowed to just the new `ApprovalDenied` case.
+Before `plan`/`code` modes existed, only `ModelError` was reachable (no mode used `tool_node`/`context_node`/`approval_node`), so the `except` clause only needed to name it. Adding `plan`/`code` is what first makes `ToolError`/`ContextError`/`ApprovalDenied` reachable through a real mode — the clause was broadened at that point specifically to keep the "failures are recorded, never swallowed" invariant true once those modes exist. `WorkflowError` was added later, once a repo audit ahead of `real-tools.md` flagged that a wiring bug pairing a step with a missing state field would otherwise surface as a raw `AttributeError`.
 
-There is no broader exception hierarchy (e.g. no common `WovenError` base, no separate `WorkflowError`/`InvalidModeError`) — an unknown mode name still surfaces as a plain `KeyError` from the `BUILTIN_MODES` dict lookup, since there is only one caller path and wrapping it today would add a type with no behavioral difference.
+There is no broader exception hierarchy (e.g. no common `WovenError` base) — an unknown mode name still surfaces as a plain `KeyError` from the `BUILTIN_MODES` dict lookup, since there is only one caller path and wrapping it today would add a type with no behavioral difference. `WorkflowError` itself lives in `workflow/core.py`, not a new hierarchy — the same per-package convention as `ToolError`/`ContextError`/`ApprovalDenied`/`ModelError`.
 
 ## Cancellation
 
@@ -310,7 +310,7 @@ Deferred. Nothing in the current implementation crosses a process, thread, or st
 
 ## Testing
 
-Deterministic testing is a permanent architectural requirement: the runtime must be testable without local LLMs, llama.cpp, cloud APIs, MCP, Graphiti, or vector databases. `FakeModel` is the permanent mechanism for the `Model` boundary; `FilesystemContext` is directly usable (deterministic by construction, no `Fake` sibling needed). See `tests/test_fake_model.py`, `tests/test_mock_tools.py`, `tests/test_filesystem_context.py`, `tests/test_mock_approval.py`, `tests/test_auto_approval.py`, `tests/test_workflow.py`, `tests/test_modes.py`, and `tests/test_agent_runtime.py` for the current coverage (successful end-to-end execution per mode, exact event-sequence assertions, request-content assertions, multi-turn behavior, and the deterministic failure paths for all four exception types).
+Deterministic testing is a permanent architectural requirement: the runtime must be testable without local LLMs, llama.cpp, cloud APIs, MCP, Graphiti, or vector databases. `FakeModel` is the permanent mechanism for the `Model` boundary; `FilesystemContext` is directly usable (deterministic by construction, no `Fake` sibling needed). See `tests/unit/test_fake_model.py`, `tests/unit/test_mock_tools.py`, `tests/unit/test_filesystem_context.py`, `tests/unit/test_mock_approval.py`, `tests/unit/test_auto_approval.py`, `tests/unit/test_workflow.py`, `tests/unit/test_modes.py`, and `tests/unit/test_agent_runtime.py` for the current coverage (successful end-to-end execution per mode, exact event-sequence assertions, request-content assertions, multi-turn behavior, and the deterministic failure paths for all five exception types, including `WorkflowError`'s missing-field guards).
 
 ## Current implementation vs. future work
 
@@ -325,7 +325,7 @@ Deterministic testing is a permanent architectural requirement: the runtime must
 | Provider protocol, GeminiProvider, MODEL_PROVIDERS | Implemented — Gemini only; local/server-based providers are `.claude/plans/local-inference.md` |
 | `Provider.check_connection()`, `SETUP_HINT` | Implemented — see `docs/architecture/setup-and-diagnostics.md` |
 | Events (12 types, callback-collected) | Implemented |
-| Errors (`ModelError`/`ToolError`/`ContextError`/`ApprovalDenied` → `RunFailed`) | Implemented |
+| Errors (`ModelError`/`ToolError`/`ContextError`/`ApprovalDenied`/`WorkflowError` → `RunFailed`) | Implemented |
 | Tools (`Tool` protocol, `tool_node`, `MockTools`) | Implemented — wired into `code` mode, always gated by `approval_node` |
 | Context (`Context` protocol, `ContextSnapshot`, `FilesystemContext`, `context_node`) | Implemented — no embeddings/vector DB; symbol info and conversation-history retrieval remain future work |
 | Permissions (`ApprovalPolicy`, `MockApproval`, `AutoApprovalPolicy`, `approval_node`) | Implemented |

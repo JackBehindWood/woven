@@ -184,3 +184,24 @@ def test_run_chat_turn_approval_denied_renders_failure_and_returns_none(tmp_path
     assert result is None
     assert "Turn failed" in buffer.getvalue()
     assert run.turns == []
+
+
+def test_run_chat_turn_missing_tool_renders_failure_and_returns_none(tmp_path):
+    console, buffer = _capturing_console()
+    runtime = AgentRuntime()
+    run = AgentRun(run_id="r1")
+
+    result = run_chat_turn(
+        runtime,
+        run,
+        "code",
+        "hi",
+        FakeModel(response_text="hello"),
+        console,
+        context_source=FilesystemContext(root=tmp_path),
+        approval=MockApproval(approve=True),
+    )
+
+    assert result is None
+    assert "Turn failed" in buffer.getvalue()
+    assert run.turns == []

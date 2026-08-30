@@ -1,6 +1,7 @@
 from woven.workflow.core import (
     EventSink,
     Workflow,
+    WorkflowError,
     WorkflowState,
     approval_node,
     context_node,
@@ -11,6 +12,7 @@ from woven.workflow.core import (
 __all__ = [
     "EventSink",
     "Workflow",
+    "WorkflowError",
     "WorkflowState",
     "approval_node",
     "context_node",

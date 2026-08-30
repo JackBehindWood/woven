@@ -22,6 +22,10 @@ from woven.tools import Tool, ToolRequest
 EventSink = Callable[[Event], None]
 
 
+class WorkflowError(Exception):
+    """Raised when a workflow node's required state field is missing."""
+
+
 class WorkflowState(BaseModel):
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
@@ -54,6 +58,8 @@ def _build_tool_request(state: WorkflowState) -> ToolRequest:
 
 
 def tool_node(state: WorkflowState, emit: EventSink) -> WorkflowState:
+    if state.tool is None:
+        raise WorkflowError("tool is required for this step")
     request = _build_tool_request(state)
     emit(ToolCallStarted(turn_id=state.turn_id, request=request))
     result = state.tool.execute(request)
@@ -62,6 +68,8 @@ def tool_node(state: WorkflowState, emit: EventSink) -> WorkflowState:
 
 
 def context_node(state: WorkflowState, emit: EventSink) -> WorkflowState:
+    if state.context_source is None:
+        raise WorkflowError("context_source is required for this step")
     request = (
         state.context_request
         if state.context_request is not None
@@ -73,6 +81,8 @@ def context_node(state: WorkflowState, emit: EventSink) -> WorkflowState:
 
 
 def approval_node(state: WorkflowState, emit: EventSink) -> WorkflowState:
+    if state.approval is None:
+        raise WorkflowError("approval is required for this step")
     request = _build_tool_request(state)
     emit(ApprovalRequested(turn_id=state.turn_id, request=request))
     decision = state.approval.evaluate(request)
