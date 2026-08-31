@@ -1,9 +1,9 @@
-"""Interactive sandbox for GeminiProvider — manual smoke-testing, not pytest.
+"""Interactive REPL for GeminiProvider — manual smoke-testing, not pytest.
 
 Usage:
-    uv run examples/sandbox_gemini.py
-    uv run examples/sandbox_gemini.py --model-id gemini-2.5-flash
-    uv run examples/sandbox_gemini.py --context notes.py --prompt "what does this do?"
+    uv run examples/gemini_repl.py
+    uv run examples/gemini_repl.py --model-id gemini-2.5-flash
+    uv run examples/gemini_repl.py --context notes.py --prompt "what does this do?"
 
 Requires a Gemini API key. Set `GEMINI_API_KEY` in examples/.env (copy
 examples/.env.example) or in your process environment.
@@ -77,7 +77,7 @@ def main() -> None:
 
     provider = GeminiProvider(api_key=api_key, model_id=args.model_id)
     context = _load_context(args.context)
-    print(f"GeminiProvider sandbox — model: {provider.model_id}")
+    print(f"GeminiProvider REPL — model: {provider.model_id}")
 
     if args.prompt is not None:
         _run_once(provider, args.prompt, context)

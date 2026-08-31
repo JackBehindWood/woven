@@ -8,7 +8,7 @@ need dependencies the core package already carries (e.g. `google-genai`).
 This is **not** the place to grow ad hoc "is my config working" or "can I
 reach Gemini" checks — that surface is `woven doctor`
 (`.claude/plans/setup-and-diagnostics.md`), which will have a proper
-status/message/suggested-fix structure. `sandbox_gemini.py` predates
+status/message/suggested-fix structure. `gemini_repl.py` predates
 `doctor` and does more than a connectivity check (REPL, `--context`,
 `--prompt`); it's precedent, not a pattern to extend toward diagnostics.
 
@@ -31,7 +31,7 @@ template.
 
 ## Thresholds for growing this directory
 
-- **Shared boilerplate:** `sandbox_gemini.py`'s `_load_context`/argparse
+- **Shared boilerplate:** `gemini_repl.py`'s `_load_context`/argparse
   scaffolding is fine to duplicate once. If a second example script needs
   the same boilerplate, extract it into `examples/_common.py` at that
   point — not before.
@@ -39,20 +39,102 @@ template.
   when it needs a dependency the core package doesn't already carry (e.g.
   a heavy local-inference example needing `llama-cpp-python`).
 
-## Sandbox project environment (Future Consideration)
+## Sandbox project environment
 
-We plan to introduce a local sandboxing boundary to isolate exploratory `examples/` execution from host filesystem state and sensitive local credentials.
+`Dockerfile` + `docker-compose.yml` at the repo root run `woven setup`,
+`woven chat`, `gemini_repl.py`, or `pytest` inside a container instead of
+against your real host state. `src/woven/sandbox/` (`Sandbox` protocol,
+`ContainerSandbox` implementation) is the Python-facing primitive behind it;
+see `docs/architecture/sandbox-environment.md` for the full design. This is
+orthogonal to `woven doctor`/pytest's existing isolation (`tests/conftest.py`'s
+`XDG_CONFIG_HOME` fixture) — it's a manual boundary a developer opts into,
+not a place to grow diagnostics.
 
-- **Objective & Isolation Boundary:** Prevent scripts, provider clients, and unvetted prompts from reading or modifying host files outside the designated workspace (e.g., via containerisation or process-level directory restrictions).
-- **Settings & Credential Safety:** 
-  - Woven resolves persistent credentials via `FileSecretStore` in `~/.config/woven/secrets.json` (enforcing strict `0600`/`0700` file permissions) or process environment variables.
-  - Sandbox scripts read local keys via `examples/.env` and the shared `PROVIDER_ENV_VARS` mapping. A true sandbox boundary guarantees that running exploratory code never mutates or exposes host settings in `~/.config/woven/`.
-- **Git Leak Prevention:**
-  - `examples/.env` is gitignored by default, with `examples/.env.example` acting as the tracked template.
-  - Example scripts load credentials through `_load_dotenv` and standard `os.environ` lookups, never through hardcoded strings or custom env file names, ensuring local API keys are never committed or pushed to remote repositories.
-- **Guided Onboarding vs. Exploration (`woven setup`):**
-  - First-time API key configuration and defaults selection (e.g., default mode or provider) belong in `woven setup`, an interactive CLI presentation layer over the core settings primitives.
-  - Sandbox scripts assume configuration is already complete or supplied via local `.env`—they are not an onboarding or setup surface, but we should probably add a way or example for this.
-- **Operational Health Checks (`woven doctor`):**
-  - Sandbox scripts are designed strictly for manual experimentation (REPLs, prompt testing), **not** for growing ad-hoc environment or connectivity checks.
-  - Diagnostic tasks—such as checking `~/.config/woven/` file permissions, verifying API key resolution, or testing provider reachability—belong exclusively in `woven doctor` (`.claude/plans/setup-and-diagnostics.md`), which outputs structured statuses and actionable fixes.
+**What's isolated, precisely** — three separate claims, not one blurred
+"sandboxed" claim:
+
+- **Config/secrets: yes.** `XDG_CONFIG_HOME` is container-local
+  (`/home/sandbox/.config`); the container never mounts your real
+  `~/.config/woven`.
+- **Filesystem: no.** The repo is bind-mounted read-write at `/app` — code
+  running inside can modify tracked and untracked files exactly like
+  running locally. This is not a filesystem sandbox.
+- **Network: no.** Default Docker networking permits outbound calls;
+  nothing here adds a network policy. What actually prevents an accidental
+  real Gemini call is that `docker-compose.yml` doesn't pass host env vars
+  through, so no real API key reaches the container unless you opt into
+  the `examples/.env` mount below — credential absence, not network
+  isolation.
+
+**Install the engine (one-time, per machine):**
+
+Any Docker-API-compatible engine works; these are the two known-good, tested
+paths — pick one:
+
+```sh
+# colima (CLI-only, recommended for headless/CI-like use — no GUI app)
+brew install colima docker docker-compose
+mkdir -p ~/.docker && cat > ~/.docker/config.json <<'EOF'
+{
+  "cliPluginsExtraDirs": ["/opt/homebrew/lib/docker/cli-plugins"]
+}
+EOF
+colima start --cpu 2 --memory 2 --disk 20
+```
+
+```sh
+# OrbStack (GUI app, less manual setup, brew cask)
+brew install --cask orbstack
+open -a OrbStack   # one-time: launch once to finish setup
+```
+
+Either way, verify it worked before building:
+
+```sh
+docker info    # should reach a Server section, not a connection error
+docker compose version
+```
+
+The `~/.docker/config.json` step is only needed for colima — the
+`docker-compose` Homebrew formula installs the `docker compose` CLI plugin
+outside Docker's default plugin search path, so Docker won't find it
+without this. OrbStack ships its own Docker Desktop-compatible CLI and
+plugin wiring, so it needs no equivalent step.
+
+Sized `--cpu 2 --memory 2` deliberately, matching this repo's 8GB M3 Air
+floor — colima's un-sized default is also 2 CPU/2GiB, but pass the flags
+explicitly so the sizing is visible and intentional rather than incidental.
+
+**Build:**
+
+```sh
+docker compose build
+```
+
+**Run:**
+
+```sh
+docker compose run --rm sandbox uv run woven setup
+docker compose run --rm sandbox uv run woven chat
+docker compose run --rm sandbox uv run python examples/gemini_repl.py
+docker compose run --rm sandbox uv run pytest
+```
+
+Each run is ephemeral (`--rm`, no named volume) — no state, including
+`XDG_CONFIG_HOME`'s contents, persists between runs. Revisit this if it
+proves annoying for iterative manual testing.
+
+To let a sandboxed run reach a real provider (e.g. for `gemini_repl.py`),
+uncomment the `examples/.env` mount in `docker-compose.yml` — it stays
+commented by default since Compose has no "mount if exists".
+
+Recommend [OrbStack](https://orbstack.dev/) or
+[colima](https://github.com/abiosoft/colima) over Docker Desktop on an 8GB
+M3 Air: both use Apple's Virtualization.framework and idle at a fraction of
+Docker Desktop's RAM.
+
+Note: the `Dockerfile`'s default `CMD` runs `uv sync --all-extras` on every
+`docker compose run` invocation, which adds real, multi-second latency to
+each command — not just hypothetically. If that proves too slow in
+practice, simplify the `CMD` to a plain shell and run `uv sync` once
+per container lifetime instead.

@@ -1,0 +1,10 @@
+services:
+  sandbox:
+    build: .
+    working_dir: /app
+    volumes:
+      - .:/app
+      # Uncomment to give the container access to real provider API keys
+      # for manual verification (e.g. `gemini_repl.py`). Opt-in only —
+      # Compose has no "mount if exists", so this stays commented by default.
+      # - ./examples/.env:/app/examples/.env:ro
