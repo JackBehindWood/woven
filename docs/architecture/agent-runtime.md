@@ -180,7 +180,7 @@ Deliberately excludes the API key — this protocol exists purely for identifica
 - `src/woven/models/providers/__init__.py` exports a flat `MODEL_PROVIDERS: dict[str, type[Model]]` registry (`{"gemini": GeminiProvider}`) — the provider **class** itself, not a wrapping lambda, so `SETUP_HINT` is reachable pre-instantiation (`MODEL_PROVIDERS[name].SETUP_HINT`) for `woven setup`'s guided flow. Mirrors `BUILTIN_MODES`'s own precedent (`src/woven/modes/core.py`): a plain dict, not a plugin/loader system, until a second real provider exists to justify one.
 - No streaming, no model-driven tool calls, no capabilities/metadata beyond `Provider`'s fields — `Model.generate(request) -> response` is unchanged. Each of these has its own forward-looking roadmap item instead of being built now or forgotten (see `.claude/plans/roadmap.md` items 6, 8, 9, 15).
 
-Manual/live verification against the real Gemini API happens via `examples/gemini_repl.py` (a standalone script, not pytest-collected) — the automated suite never makes a network call, deliberately, so a stray env var or CI misconfiguration can't trigger a real, billed API call.
+Manual/live verification against the real Gemini API happens via `devtools/gemini_repl.py` (a standalone script, not pytest-collected) — the automated suite never makes a network call, deliberately, so a stray env var or CI misconfiguration can't trigger a real, billed API call.
 
 ## Tools
 

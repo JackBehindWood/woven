@@ -1,12 +1,12 @@
 """Interactive REPL for GeminiProvider — manual smoke-testing, not pytest.
 
 Usage:
-    uv run examples/gemini_repl.py
-    uv run examples/gemini_repl.py --model-id gemini-2.5-flash
-    uv run examples/gemini_repl.py --context notes.py --prompt "what does this do?"
+    uv run devtools/gemini_repl.py
+    uv run devtools/gemini_repl.py --model-id gemini-2.5-flash
+    uv run devtools/gemini_repl.py --context notes.py --prompt "what does this do?"
 
-Requires a Gemini API key. Set `GEMINI_API_KEY` in examples/.env (copy
-examples/.env.example) or in your process environment.
+Requires a Gemini API key. Set `GEMINI_API_KEY` in devtools/.env (copy
+devtools/.env.example) or in your process environment.
 """
 
 from __future__ import annotations
@@ -70,7 +70,7 @@ def main() -> None:
     if api_key is None:
         print(
             "No Gemini API key configured. Set GEMINI_API_KEY, e.g. in "
-            "examples/.env (copy examples/.env.example).",
+            "devtools/.env (copy devtools/.env.example).",
             file=sys.stderr,
         )
         raise SystemExit(1)

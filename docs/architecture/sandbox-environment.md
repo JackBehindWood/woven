@@ -1,12 +1,12 @@
 # Sandbox environment architecture
 
-This document is the durable, committed reference for Woven's isolation boundary — `src/woven/sandbox/` plus the `Dockerfile`/`docker-compose.yml` at the repo root. It complements `examples/README.md`, which carries the `docker compose` usage recipes.
+This document is the durable, committed reference for Woven's isolation boundary — `src/woven/sandbox/` plus the `Dockerfile`/`docker-compose.yml` at the repo root. It complements `devtools/container/README.md`, which carries the `docker compose` usage recipes.
 
 Where this document says "current implementation," it describes code that exists today. Where it says "future," it describes direction only.
 
 ## Purpose
 
-Ordinary `woven setup`/`woven chat` usage, and `examples/gemini_repl.py`, all read/write the real `~/.config/woven` and can make real provider network calls — unlike `pytest`, already isolated via `tests/conftest.py`'s `XDG_CONFIG_HOME` autouse fixture. `.claude/plans/sandbox-environment.md` (roadmap item 4, sequenced directly before `real-tools.md`) closes that gap with a single container-based isolation boundary, decided to serve two purposes at once: dev/test isolation today, and the execution boundary `real-tools.md`'s future shell/file `Tool` implementations will run inside.
+Ordinary `woven setup`/`woven chat` usage, and `devtools/gemini_repl.py`, all read/write the real `~/.config/woven` and can make real provider network calls — unlike `pytest`, already isolated via `tests/conftest.py`'s `XDG_CONFIG_HOME` autouse fixture. `.claude/plans/sandbox-environment.md` (roadmap item 4, sequenced directly before `real-tools.md`) closes that gap with a single container-based isolation boundary, decided to serve two purposes at once: dev/test isolation today, and the execution boundary `real-tools.md`'s future shell/file `Tool` implementations will run inside.
 
 ## Position in the architecture
 
@@ -48,7 +48,7 @@ A timed-out command is represented as data (`timed_out=True, exit_code=None`), n
 
 - `.run(request)`: if `request.cwd` is absolute, raises `SandboxError` immediately rather than silently mis-mapping a host path. A relative `cwd` maps to `/app/{cwd}` (the compose file's mount point) via a `--workdir` flag. Shells out to `docker compose -f <compose_file> run --rm [--workdir /app/<cwd>] <service> <command...>` via `subprocess.run(capture_output=True, text=True, check=False, timeout=request.timeout)`.
 - `subprocess.TimeoutExpired` → `SandboxResult(exit_code=None, timed_out=True, ...)`, not raised.
-- `FileNotFoundError` (no `docker` binary) → re-raised as `SandboxError` pointing at `examples/README.md`'s OrbStack/colima recommendation.
+- `FileNotFoundError` (no `docker` binary) → re-raised as `SandboxError` pointing at `devtools/container/README.md`'s OrbStack/colima recommendation.
 
 **Path contract:** `SandboxRequest.cwd` is always workspace-relative, never a host absolute path — the host repo root and the container's mount point (`/app`) are different paths, so forwarding a host path straight through would silently resolve to the wrong directory or fail. `ContainerSandbox` has exactly one mount point, fixed in `docker-compose.yml`, so it does the relative→`/app/…` join itself; no general host↔container path-mapping object exists, since there is only one implementation and one mapping today.
 
@@ -58,19 +58,19 @@ Not wired into `runtime/core.py`'s hardcoded exception tuple (`ModelError, ToolE
 
 ## Container definition (repo root)
 
-**`Dockerfile`** — `python:3.12-slim` base; `uv` installed via the static binary from `ghcr.io/astral-sh/uv` (no network call during build beyond the layer pull itself); non-root `sandbox` user (uid 1000) owning `/app`; `XDG_CONFIG_HOME=/home/sandbox/.config` (container-local, never the host's `~/.config`); no `COPY` of repo source — code arrives via the bind mount at run time, so a code edit never requires an image rebuild, only a `pyproject.toml`/`Dockerfile` change does. Default `CMD` runs `uv sync --all-extras` then drops to a shell, so `docker compose run --rm sandbox <command>` works after a fresh mount with no separate provisioning step.
+**`Dockerfile`** — `python:3.12-slim` base; `uv` installed via the static binary from `ghcr.io/astral-sh/uv` (no network call during build beyond the layer pull itself); non-root `sandbox` user (uid 1000) owning `/app`; `XDG_CONFIG_HOME=/home/sandbox/.config` (container-local, never the host's `~/.config`); no `COPY` of repo source — code arrives via the bind mount at run time, so a code edit never requires an image rebuild, only a `pyproject.toml`/`Dockerfile` change does. `ENTRYPOINT` (not `CMD`) runs `uv sync --all-extras` before `exec`ing its arguments, so `docker compose run --rm sandbox <command>` always syncs every extra (`cli`, `dev`) first, then runs `<command>`, with no separate provisioning step — this has to be `ENTRYPOINT` rather than `CMD` because `docker compose run <service> <args>` replaces `CMD` outright, which would silently skip the sync whenever a command is passed and leave `uv run <cmd>`'s own implicit sync to install only the base dependency group. `CMD ["bash"]` is the default when no command is passed, matching the original drop-to-a-shell behavior.
 
-**`docker-compose.yml`** — one `sandbox` service: `build: .`, repo root bind-mounted read-write at `/app`, a commented-out (opt-in) `examples/.env` mount, no host environment pass-through and no named volumes — state, including `XDG_CONFIG_HOME`'s contents, lives only inside the ephemeral container filesystem.
+**`docker-compose.yml`** — one `sandbox` service: `build: .`, repo root bind-mounted read-write at `/app`, a named `woven-sandbox-config` volume at `/home/sandbox/.config` (`XDG_CONFIG_HOME`) so `woven setup`'s state survives across `docker compose run --rm` invocations instead of resetting every time, and a commented-out (opt-in) `devtools/.env` mount. No host environment pass-through. The config volume is Docker-managed, not a bind mount — still fully separate from the host's real `~/.config/woven` — and is reset manually (`docker compose down -v` or `docker volume rm woven-sandbox-config`), not automatically on every run.
 
 **`.dockerignore`** mirrors `.gitignore`'s build-artifact/cache entries.
 
 ## What's isolated, precisely
 
-Three separate claims, not one blurred "sandboxed" claim — see `examples/README.md` for the developer-facing version of the same breakdown:
+Three separate claims, not one blurred "sandboxed" claim — see `devtools/container/README.md` for the developer-facing version of the same breakdown:
 
 - **Config/secrets: yes** — container-local `XDG_CONFIG_HOME`, no mount of host `~/.config/woven`.
 - **Filesystem: no** — the repo is bind-mounted read-write at `/app`; code running inside can modify tracked and untracked files exactly like running locally. This is not a filesystem sandbox.
-- **Network: no** — default Docker networking permits outbound calls; nothing here adds a network policy. What actually prevents an accidental real provider call is that `docker-compose.yml` doesn't pass host env vars through, so no real API key reaches the container unless a developer opts into the `examples/.env` mount — credential absence, not network isolation.
+- **Network: no** — default Docker networking permits outbound calls; nothing here adds a network policy. What actually prevents an accidental real provider call is that `docker-compose.yml` doesn't pass host env vars through, so no real API key reaches the container unless a developer opts into the `devtools/.env` mount — credential absence, not network isolation.
 
 ## Testing
 
@@ -92,7 +92,7 @@ A manual smoke test (`docker compose build && docker compose run --rm sandbox uv
 | `Sandbox` protocol, `SandboxRequest`/`SandboxResult` (`src/woven/sandbox/protocol.py`) | Implemented |
 | `ContainerSandbox` (`src/woven/sandbox/container.py`) | Implemented |
 | `Dockerfile` / `docker-compose.yml` / `.dockerignore` (repo root) | Implemented |
-| `examples/README.md` sandbox usage docs | Implemented |
+| `devtools/container/README.md` sandbox usage docs | Implemented |
 | Wiring `Sandbox` into a real `Tool` / `ApprovalPolicy` / `runtime/core.py`'s exception tuple | Not implemented — `.claude/plans/real-tools.md` |
 | Host-process or remote execution backend satisfying `Sandbox` | Not implemented — no current caller needs one |
 | Resource limits, network policy, env var passthrough on `SandboxRequest` | Not implemented — no current caller needs them |

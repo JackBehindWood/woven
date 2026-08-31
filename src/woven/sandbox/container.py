@@ -56,7 +56,7 @@ class ContainerSandbox:
         except FileNotFoundError as exc:
             raise SandboxError(
                 "docker not found — install a Docker-API-compatible engine "
-                "(OrbStack or colima recommended; see examples/README.md)"
+                "(OrbStack or colima recommended; see devtools/container/README.md)"
             ) from exc
 
         return SandboxResult(

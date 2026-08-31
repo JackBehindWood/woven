@@ -11,6 +11,6 @@ Structure
 Key points
 
 - Prefer deterministic unit tests that don't require external model providers.
-- **No test in this suite — unit or integration, gated or not — may call a real, billed third-party model API** (Gemini, Claude, OpenAI, or any other paid provider). This is a hard, explicitly-decided constraint; see `.claude/plans/roadmap.md`'s "Resolved cross-cutting decisions". Manual live verification against a real provider belongs in `examples/gemini_repl.py`, which pytest never collects.
+- **No test in this suite — unit or integration, gated or not — may call a real, billed third-party model API** (Gemini, Claude, OpenAI, or any other paid provider). This is a hard, explicitly-decided constraint; see `.claude/plans/roadmap.md`'s "Resolved cross-cutting decisions". Manual live verification against a real provider belongs in `devtools/gemini_repl.py`, which pytest never collects.
 - `uv run pytest` runs only `tests/unit/`-style tests (integration excluded by default via `addopts` in `pyproject.toml`) — fast, deterministic, fully offline.
 - `uv run pytest -m integration` opts into `tests/integration/`.

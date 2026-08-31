@@ -14,7 +14,7 @@ not, opt-in or not.** This was explicitly decided by the project owner (see
 `.claude/plans/roadmap.md`'s "Resolved cross-cutting decisions") after an
 earlier `RUN_LIVE_MODEL_TESTS=1`-gated live-Gemini test was removed for
 exactly this reason. Manual live verification against a real provider lives
-in `examples/gemini_repl.py`, which is not collected by pytest at all.
+in `devtools/gemini_repl.py`, which is not collected by pytest at all.
 
 This directory is currently empty aside from this README — there is no
 free/local integration scenario to test yet. It becomes real once one
